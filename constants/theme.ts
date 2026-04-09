@@ -5,26 +5,43 @@
 
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+// Kream-inspired minimal palette: deep black + warm whites + subtle grays
+const tintColorLight = '#111111';
+const tintColorDark = '#FAFAFA';
 
 export const Colors = {
   light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
+    text: '#111111',           // Deep black
+    background: '#FAFAFA',     // Warm white
+    tint: tintColorLight,      // Primary action color
+    icon: '#999999',           // Subtle gray
+    tabIconDefault: '#CCCCCC', // Very light gray
     tabIconSelected: tintColorLight,
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
+    text: '#FAFAFA',
+    background: '#111111',
     tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
+    icon: '#666666',
+    tabIconDefault: '#666666',
     tabIconSelected: tintColorDark,
   },
+};
+
+// Extended palette for cards, badges, etc.
+export const ExtendedColors = {
+  white: '#FFFFFF',
+  lightGray: '#F5F5F5',
+  mediumGray: '#E8E8E8',
+  strongGray: '#CCCCCC',
+  darkGray: '#999999',
+  darkBlack: '#111111',
+  
+  // Status colors (subtle)
+  success: '#6B8E23',   // Olive green
+  warning: '#D4A574',   // Warm brown
+  danger: '#A0522D',    // Muted red-brown
+  info: '#708090',      // Slate gray
 };
 
 export const Fonts = Platform.select({

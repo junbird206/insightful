@@ -1,0 +1,653 @@
+import { router, useFocusEffect } from 'expo-router'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Alert, Animated, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import Swipeable from 'react-native-gesture-handler/Swipeable'
+import { SafeAreaView } from 'react-native-safe-area-context'
+
+import { ArchiveScreen } from '@/components/archive-screen'
+import { MyPage } from '@/components/my-page'
+import { ScrapCard } from '@/components/scrap-card'
+import { SideMenu } from '@/components/side-menu'
+import { UndoToast } from '@/components/undo-toast'
+import { archiveScrap, bulkArchiveScraps, bulkDeleteScraps, deleteScrap, getAllScraps, updateScrapFields } from '@/lib/storage'
+import { Bucket, Scrap } from '@/types/scrap'
+
+type UndoState = {
+  scrapData: Scrap[]
+  timerId: ReturnType<typeof setTimeout>
+} | null
+
+type FeedFilter = 'recent' | Bucket
+
+type Props = {
+  filter: FeedFilter
+}
+
+const EMPTY: Record<FeedFilter, string> = {
+  recent: '저장된 항목이 없습니다.',
+  read:   'To Read 항목이 없습니다.',
+  do:     'To Do 항목이 없습니다.',
+}
+
+export function FeedScreen({ filter }: Props) {
+  const [scraps, setScraps] = useState<Scrap[]>([])
+  const [starredOnly, setStarredOnly] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [myPageOpen, setMyPageOpen] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [undo, setUndo] = useState<UndoState>(null)
+  const [archiveToast, setArchiveToast] = useState(false)
+  const archiveToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Multi-select
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // Tracks the currently-swiped-open card so any other interaction
+  // (swiping another card, scrolling, tapping any card) closes it.
+  const openSwipeableRef = useRef<Swipeable | null>(null)
+
+  function handleSwipeOpen(swipeable: Swipeable) {
+    if (openSwipeableRef.current && openSwipeableRef.current !== swipeable) {
+      openSwipeableRef.current.close()
+    }
+    openSwipeableRef.current = swipeable
+  }
+
+  function closeOpenSwipeable() {
+    if (openSwipeableRef.current) {
+      openSwipeableRef.current.close()
+      openSwipeableRef.current = null
+    }
+  }
+
+  // Captures taps on any card while a swipe is open: closes the swipe and
+  // swallows the tap so the card's onPress (open URL) doesn't fire — matches
+  // the iOS Mail "tap to dismiss swipe" affordance.
+  function handleShouldCaptureTouch(): boolean {
+    if (openSwipeableRef.current) {
+      openSwipeableRef.current.close()
+      openSwipeableRef.current = null
+      return true
+    }
+    return false
+  }
+
+  async function loadScraps() {
+    const data = await getAllScraps()
+    setScraps(data)
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true)
+    await loadScraps()
+    setRefreshing(false)
+  }
+
+  // ─── Single delete ──────────────────────────────────────────────────────────
+
+  async function handleDelete(id: string) {
+    const scrap = scraps.find((s) => s.id === id)
+    if (!scrap) return
+
+    if (undo?.timerId) {
+      clearTimeout(undo.timerId)
+      await bulkDeleteScraps(undo.scrapData.map((s) => s.id))
+    }
+
+    const timerId = setTimeout(async () => {
+      await deleteScrap(id)
+      setUndo(null)
+    }, 4000)
+
+    setUndo({ scrapData: [scrap], timerId })
+    setScraps((prev) => prev.filter((s) => s.id !== id))
+  }
+
+  async function handleUndo() {
+    if (!undo?.timerId) return
+    clearTimeout(undo.timerId)
+    setScraps((prev) => [...undo.scrapData, ...prev])
+    setUndo(null)
+  }
+
+  // ─── Single archive ─────────────────────────────────────────────────────────
+
+  async function handleArchive(id: string) {
+    setScraps((prev) => prev.filter((s) => s.id !== id))
+    await archiveScrap(id)
+    showArchiveToast()
+  }
+
+  function showArchiveToast() {
+    if (archiveToastTimer.current) clearTimeout(archiveToastTimer.current)
+    setArchiveToast(true)
+    archiveToastTimer.current = setTimeout(() => setArchiveToast(false), 2500)
+  }
+
+  async function handleToggleStar(id: string) {
+    const scrap = scraps.find((s) => s.id === id)
+    if (!scrap) return
+    await updateScrapFields(id, { starred: !scrap.starred })
+    await loadScraps()
+  }
+
+  // ─── Multi-select ───────────────────────────────────────────────────────────
+
+  function enterSelectMode(id: string) {
+    setSelectMode(true)
+    setSelectedIds(new Set([id]))
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false)
+    setSelectedIds(new Set())
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      if (next.size === 0) setSelectMode(false)
+      return next
+    })
+  }
+
+  async function handleBulkArchive() {
+    const ids = Array.from(selectedIds)
+    setScraps((prev) => prev.filter((s) => !selectedIds.has(s.id)))
+    exitSelectMode()
+    await bulkArchiveScraps(ids)
+    showArchiveToast()
+  }
+
+  function handleBulkDelete() {
+    const count = selectedIds.size
+    if (count === 0) return
+    Alert.alert(
+      `${count}개 카드 삭제`,
+      `선택한 ${count}개의 카드를 삭제할까요?`,
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '삭제',
+          style: 'destructive',
+          onPress: async () => {
+            const ids = Array.from(selectedIds)
+            const deletedScraps = scraps.filter((s) => selectedIds.has(s.id))
+
+            if (undo?.timerId) {
+              clearTimeout(undo.timerId)
+              await bulkDeleteScraps(undo.scrapData.map((s) => s.id))
+            }
+
+            const timerId = setTimeout(async () => {
+              await bulkDeleteScraps(ids)
+              setUndo(null)
+            }, 4000)
+
+            setUndo({ scrapData: deletedScraps, timerId })
+            setScraps((prev) => prev.filter((s) => !selectedIds.has(s.id)))
+            exitSelectMode()
+          },
+        },
+      ],
+    )
+  }
+
+  // ─── Effects ────────────────────────────────────────────────────────────────
+
+  useFocusEffect(
+    useCallback(() => {
+      loadScraps()
+    }, []),
+  )
+
+  const hasProcessing = scraps.some((s) => s.status === 'processing')
+  useEffect(() => {
+    if (!hasProcessing) return
+    const interval = setInterval(loadScraps, 1000)
+    return () => clearInterval(interval)
+  }, [hasProcessing])
+
+  useEffect(() => {
+    return () => {
+      if (undo?.timerId) clearTimeout(undo.timerId)
+    }
+  }, [undo])
+
+  useEffect(() => {
+    return () => {
+      if (archiveToastTimer.current) clearTimeout(archiveToastTimer.current)
+    }
+  }, [])
+
+  let displayed = filter === 'recent'
+    ? scraps
+    : scraps.filter((s) => s.bucket === filter)
+
+  if (starredOnly) {
+    displayed = displayed.filter((s) => s.starred)
+  }
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Title row */}
+      <View style={styles.titleRow}>
+        {selectMode ? (
+          <>
+            <Text style={styles.selectTitle}>{selectedIds.size}개 선택됨</Text>
+            <TouchableOpacity onPress={exitSelectMode} activeOpacity={0.7}>
+              <Text style={styles.selectCancel}>취소</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={styles.appTitle}>insightful</Text>
+            <View style={styles.titleRight}>
+              <TouchableOpacity
+                onPress={() => setStarredOnly((v) => !v)}
+                activeOpacity={0.7}
+                style={[styles.filterBtn, starredOnly && styles.filterBtnActive]}
+              >
+                <Text style={[styles.filterBtnText, starredOnly && styles.filterBtnTextActive]}>
+                  ★ 중요만
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setArchiveOpen(true)}
+                activeOpacity={0.6}
+                style={styles.iconBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.iconBtnText}>⊡</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setMenuOpen(true)}
+                activeOpacity={0.6}
+                style={styles.iconBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.iconBtnText}>☰</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </View>
+
+      <FlatList
+        data={displayed}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) =>
+          selectMode ? (
+            <SelectableItem
+              scrap={item}
+              selected={selectedIds.has(item.id)}
+              onToggle={() => toggleSelect(item.id)}
+            />
+          ) : (
+            <SwipeableCard
+              scrap={item}
+              onDelete={handleDelete}
+              onArchive={handleArchive}
+              onToggleStar={handleToggleStar}
+              onLongPress={() => enterSelectMode(item.id)}
+              onSwipeOpen={handleSwipeOpen}
+              onShouldCaptureTouch={handleShouldCaptureTouch}
+            />
+          )
+        }
+        contentContainerStyle={styles.list}
+        onScrollBeginDrag={closeOpenSwipeable}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#999999" />
+        }
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Text style={styles.emptyText}>
+              {starredOnly ? '★ 표시한 항목이 없습니다.' : EMPTY[filter]}
+            </Text>
+          </View>
+        }
+      />
+
+      {/* FAB — hidden in select mode */}
+      {!selectMode && (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => router.push('/(tabs)/add')}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.fabIcon}>+</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Select mode action bar */}
+      {selectMode && (
+        <View style={styles.actionBar}>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.actionBtnArchive, selectedIds.size === 0 && styles.actionBtnDisabled]}
+            onPress={handleBulkArchive}
+            disabled={selectedIds.size === 0}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.actionBtnText, styles.actionBtnArchiveText]}>
+              보관 {selectedIds.size}개
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.actionBtnDelete, selectedIds.size === 0 && styles.actionBtnDisabled]}
+            onPress={handleBulkDelete}
+            disabled={selectedIds.size === 0}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.actionBtnText, styles.actionBtnDeleteText]}>
+              삭제 {selectedIds.size}개
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Archive toast */}
+      <ArchiveToast visible={archiveToast} />
+
+      {/* Undo Toast */}
+      <UndoToast
+        visible={undo != null}
+        onUndo={handleUndo}
+        count={undo?.scrapData.length}
+      />
+
+      {/* Side Menu */}
+      <SideMenu
+        visible={menuOpen}
+        scrapCount={scraps.length}
+        onClose={() => setMenuOpen(false)}
+        onMyPage={() => { setMenuOpen(false); setMyPageOpen(true) }}
+      />
+
+      {/* My Page */}
+      <MyPage visible={myPageOpen} scrapCount={scraps.length} onClose={() => setMyPageOpen(false)} />
+
+      {/* Archive Screen */}
+      <ArchiveScreen visible={archiveOpen} onClose={() => setArchiveOpen(false)} />
+    </SafeAreaView>
+  )
+}
+
+// ─── Archive toast ────────────────────────────────────────────────────────────
+
+function ArchiveToast({ visible }: { visible: boolean }) {
+  const opacity = useRef(new Animated.Value(0)).current
+
+  useEffect(() => {
+    Animated.timing(opacity, {
+      toValue: visible ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start()
+  }, [visible])
+
+  if (!visible) return null
+
+  return (
+    <Animated.View style={[styles.archiveToastWrap, { opacity }]} pointerEvents="none">
+      <View style={styles.archiveToast}>
+        <Text style={styles.archiveToastText}>보관함으로 이동됨</Text>
+      </View>
+    </Animated.View>
+  )
+}
+
+// ─── Selectable item (multi-select mode) ──────────────────────────────────────
+
+function SelectableItem({
+  scrap,
+  selected,
+  onToggle,
+}: {
+  scrap: Scrap
+  selected: boolean
+  onToggle: () => void
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.selectableRow}
+      onPress={onToggle}
+      activeOpacity={0.85}
+    >
+      <View style={[styles.selectCircle, selected && styles.selectCircleFilled]}>
+        {selected && <Text style={styles.checkText}>✓</Text>}
+      </View>
+      <View style={styles.selectCardWrap} pointerEvents="none">
+        <ScrapCard scrap={scrap} onToggleStar={() => {}} />
+      </View>
+    </TouchableOpacity>
+  )
+}
+
+// ─── Swipeable wrapper ────────────────────────────────────────────────────────
+
+type SwipeableCardProps = {
+  scrap: Scrap
+  onDelete: (id: string) => void
+  onArchive: (id: string) => void
+  onToggleStar: (id: string) => void
+  onLongPress: () => void
+  onSwipeOpen: (swipeable: Swipeable) => void
+  onShouldCaptureTouch: () => boolean
+}
+
+function SwipeableCard({
+  scrap,
+  onDelete,
+  onArchive,
+  onToggleStar,
+  onLongPress,
+  onSwipeOpen,
+  onShouldCaptureTouch,
+}: SwipeableCardProps) {
+  const ref = useRef<Swipeable>(null)
+
+  function renderRightActions() {
+    return (
+      <TouchableOpacity
+        style={styles.deleteAction}
+        onPress={() => { ref.current?.close(); onDelete(scrap.id) }}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.deleteText}>삭제</Text>
+      </TouchableOpacity>
+    )
+  }
+
+  function renderLeftActions() {
+    return (
+      <TouchableOpacity
+        style={styles.archiveAction}
+        onPress={() => { ref.current?.close(); onArchive(scrap.id) }}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.archiveActionText}>보관</Text>
+      </TouchableOpacity>
+    )
+  }
+
+  return (
+    <Swipeable
+      ref={ref}
+      renderRightActions={renderRightActions}
+      renderLeftActions={renderLeftActions}
+      rightThreshold={60}
+      leftThreshold={60}
+      overshootRight={false}
+      overshootLeft={false}
+      onSwipeableWillOpen={() => {
+        if (ref.current) onSwipeOpen(ref.current)
+      }}
+    >
+      <View onStartShouldSetResponderCapture={onShouldCaptureTouch}>
+        <ScrapCard scrap={scrap} onToggleStar={onToggleStar} onLongPress={onLongPress} />
+      </View>
+    </Swipeable>
+  )
+}
+
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#FAFAFA' },
+
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
+  appTitle: { fontSize: 28, fontWeight: '700', color: '#111111', letterSpacing: -0.5 },
+  titleRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+
+  selectTitle: { fontSize: 17, fontWeight: '700', color: '#111111' },
+  selectCancel: { fontSize: 15, fontWeight: '600', color: '#3B82F6' },
+
+  filterBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#F0F0F0',
+  },
+  filterBtnActive: { backgroundColor: '#FEF3C7' },
+  filterBtnText: { fontSize: 13, fontWeight: '600', color: '#999999' },
+  filterBtnTextActive: { color: '#D97706' },
+
+  iconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F0F0F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconBtnText: { fontSize: 18, color: '#555555', lineHeight: 20 },
+
+  list: { paddingTop: 4, paddingBottom: 100 },
+  empty: { marginTop: 80, alignItems: 'center', paddingHorizontal: 40 },
+  emptyText: { fontSize: 14, color: '#999999', textAlign: 'center', lineHeight: 22 },
+
+  // Swipe actions
+  deleteAction: {
+    backgroundColor: '#E53E3E',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    marginBottom: 10,
+    borderRadius: 10,
+    marginRight: 12,
+  },
+  deleteText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
+
+  archiveAction: {
+    backgroundColor: '#6B7280',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    marginBottom: 10,
+    borderRadius: 10,
+    marginLeft: 12,
+  },
+  archiveActionText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
+
+  // Selectable item
+  selectableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  selectCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#CCCCCC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 14,
+  },
+  selectCircleFilled: {
+    backgroundColor: '#111111',
+    borderColor: '#111111',
+  },
+  checkText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  selectCardWrap: {
+    flex: 1,
+  },
+
+  // Bottom action bar (select mode)
+  actionBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 28,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 0.5,
+    borderTopColor: '#E8E8E8',
+    gap: 10,
+  },
+  actionBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  actionBtnDisabled: { opacity: 0.4 },
+  actionBtnText: { fontSize: 15, fontWeight: '700' },
+  actionBtnArchive: { backgroundColor: '#F0F0F0' },
+  actionBtnArchiveText: { color: '#555555' },
+  actionBtnDelete: { backgroundColor: '#FEE2E2' },
+  actionBtnDeleteText: { color: '#DC2626' },
+
+  // Toasts
+  archiveToastWrap: {
+    position: 'absolute',
+    bottom: 90,
+    left: 16,
+    right: 16,
+  },
+  archiveToast: {
+    backgroundColor: '#6B7280',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  archiveToastText: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
+
+  fab: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#111111',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  fabIcon: { fontSize: 28, color: '#FFFFFF', lineHeight: 32, marginTop: -2 },
+})

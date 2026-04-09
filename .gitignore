@@ -31,6 +31,7 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
 .env*.local
 
 # typescript
@@ -38,6 +39,13 @@ yarn-error.*
 
 app-example
 
-# generated native folders
-/ios
+# Android (generated, not customized yet)
 /android
+
+# iOS build artifacts (ios/ itself is tracked for Share Extension + native config)
+ios/Pods/
+ios/build/
+ios/.xcode.env.local
+
+# Claude Code local config
+.claude/
