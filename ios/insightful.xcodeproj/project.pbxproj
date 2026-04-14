@@ -16,6 +16,8 @@
 		B3E50FF22F87DC1900D9B556 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E50FF02F87DC1900D9B554 /* ShareViewController.swift */; };
 		B3E50FF32F87DC1900D9B557 /* MainInterface.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B3E50FF12F87DC1900D9B555 /* MainInterface.storyboard */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
+		C1B60A022F8BFA0100E5D6F7 /* InsightfulPendingQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1B60A012F8BFA0100E5D6F7 /* InsightfulPendingQueue.swift */; };
+		C1B60A042F8BFA0100E5D6F7 /* InsightfulPendingQueue.m in Sources */ = {isa = PBXBuildFile; fileRef = C1B60A032F8BFA0100E5D6F7 /* InsightfulPendingQueue.m */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
@@ -58,6 +60,8 @@
 		B3E50FF42F87DC1900D9B558 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B3E50FF52F87DC1900D9B559 /* InsightfulShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = InsightfulShare.entitlements; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
+		C1B60A012F8BFA0100E5D6F7 /* InsightfulPendingQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = InsightfulPendingQueue.swift; path = insightful/InsightfulPendingQueue.swift; sourceTree = "<group>"; };
+		C1B60A032F8BFA0100E5D6F7 /* InsightfulPendingQueue.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = InsightfulPendingQueue.m; path = insightful/InsightfulPendingQueue.m; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = insightful/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* insightful-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "insightful-Bridging-Header.h"; path = "insightful/insightful-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -87,6 +91,8 @@
 			isa = PBXGroup;
 			children = (
 				F11748412D0307B40044C1D9 /* AppDelegate.swift */,
+				C1B60A012F8BFA0100E5D6F7 /* InsightfulPendingQueue.swift */,
+				C1B60A032F8BFA0100E5D6F7 /* InsightfulPendingQueue.m */,
 				F11748442D0722820044C1D9 /* insightful-Bridging-Header.h */,
 				BB2F792B24A3F905000567C9 /* Supporting */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
@@ -381,6 +387,7 @@
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXApplication/ExpoApplication_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/EXConstants.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/ExpoConstants_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/EXNotifications/ExpoNotifications_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoSystemUI/ExpoSystemUI_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/RNCAsyncStorage/RNCAsyncStorage_resources.bundle",
@@ -395,6 +402,7 @@
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoApplication_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXConstants.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoConstants_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoNotifications_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoFileSystem_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoSystemUI_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RNCAsyncStorage_resources.bundle",
@@ -417,6 +425,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
+				C1B60A022F8BFA0100E5D6F7 /* InsightfulPendingQueue.swift in Sources */,
+				C1B60A042F8BFA0100E5D6F7 /* InsightfulPendingQueue.m in Sources */,
 				01A836985AE18A6F34C2575F /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

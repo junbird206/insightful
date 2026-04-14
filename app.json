@@ -41,6 +41,13 @@
           }
         }
       ],
+      [
+        "expo-notifications",
+        {
+          "enableBackgroundRemoteNotifications": false
+        }
+      ],
+      "./plugins/strip-push-entitlement"
     ],
     "experiments": {
       "typedRoutes": true,

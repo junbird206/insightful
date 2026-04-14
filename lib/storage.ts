@@ -1,3 +1,4 @@
+import { cancelReminder, cancelReminders, scheduleReminder } from './notifications'
 import { supabase } from './supabase'
 import { Scrap } from '@/types/scrap'
 
@@ -101,6 +102,7 @@ export async function archiveScrap(id: string): Promise<void> {
     .update({ archived_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw error
+  cancelReminder(id).catch(() => {})
 }
 
 export async function restoreScrap(id: string): Promise<void> {
@@ -114,11 +116,15 @@ export async function restoreScrap(id: string): Promise<void> {
 export async function saveScrap(scrap: Scrap): Promise<void> {
   const { error } = await supabase.from('scraps').insert(scrapToRow(scrap))
   if (error) throw error
+  if (scrap.remindAt) {
+    scheduleReminder(scrap.id, scrap.remindAt).catch(() => {})
+  }
 }
 
 export async function deleteScrap(id: string): Promise<void> {
   const { error } = await supabase.from('scraps').delete().eq('id', id)
   if (error) throw error
+  cancelReminder(id).catch(() => {})
 }
 
 export async function updateScrap(updated: Scrap): Promise<void> {
@@ -135,6 +141,13 @@ export async function updateScrapFields(id: string, fields: Partial<Scrap>): Pro
     .update(toDbFields(fields))
     .eq('id', id)
   if (error) throw error
+  if ('remindAt' in fields) {
+    if (fields.remindAt) {
+      scheduleReminder(id, fields.remindAt).catch(() => {})
+    } else {
+      cancelReminder(id).catch(() => {})
+    }
+  }
 }
 
 export async function renameTagInAllScraps(oldTag: string, newTag: string): Promise<void> {
@@ -179,6 +192,7 @@ export async function bulkDeleteScraps(ids: string[]): Promise<void> {
   if (ids.length === 0) return
   const { error } = await supabase.from('scraps').delete().in('id', ids)
   if (error) throw error
+  cancelReminders(ids).catch(() => {})
 }
 
 export async function bulkArchiveScraps(ids: string[]): Promise<void> {
@@ -188,6 +202,7 @@ export async function bulkArchiveScraps(ids: string[]): Promise<void> {
     .update({ archived_at: new Date().toISOString() })
     .in('id', ids)
   if (error) throw error
+  cancelReminders(ids).catch(() => {})
 }
 
 export async function bulkRestoreScraps(ids: string[]): Promise<void> {

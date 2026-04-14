@@ -9,6 +9,7 @@ import {
 } from 'react-native'
 import Swipeable from 'react-native-gesture-handler/Swipeable'
 
+import { EditScrapSheet } from '@/components/edit-scrap-sheet'
 import { ScrapCard } from '@/components/scrap-card'
 import { bulkRestoreScraps, getArchivedScraps, restoreScrap, updateScrapFields } from '@/lib/storage'
 import { Scrap } from '@/types/scrap'
@@ -24,6 +25,9 @@ export function ArchiveScreen({ visible, onClose }: Props) {
   // Multi-select
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // Edit sheet
+  const [editing, setEditing] = useState<Scrap | null>(null)
 
   // Tracks the currently-swiped-open archive card
   const openSwipeableRef = useRef<Swipeable | null>(null)
@@ -77,9 +81,9 @@ export function ArchiveScreen({ visible, onClose }: Props) {
 
   // ─── Multi-select ─────────────────────────────────────────────────────────
 
-  function enterSelectMode(id: string) {
+  function enterSelectMode() {
     setSelectMode(true)
-    setSelectedIds(new Set([id]))
+    setSelectedIds(new Set())
   }
 
   function exitSelectMode() {
@@ -121,6 +125,16 @@ export function ArchiveScreen({ visible, onClose }: Props) {
               {selectMode ? '취소' : '닫기'}
             </Text>
           </TouchableOpacity>
+          {!selectMode && scraps.length > 0 && (
+            <TouchableOpacity
+              style={styles.headerRight}
+              onPress={enterSelectMode}
+              activeOpacity={0.6}
+              hitSlop={8}
+            >
+              <Text style={styles.back}>선택</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <FlatList
@@ -138,7 +152,7 @@ export function ArchiveScreen({ visible, onClose }: Props) {
                 scrap={item}
                 onRestore={handleRestore}
                 onToggleStar={handleToggleStar}
-                onLongPress={() => enterSelectMode(item.id)}
+                onLongPress={() => setEditing(item)}
                 onSwipeOpen={handleSwipeOpen}
                 onShouldCaptureTouch={handleShouldCaptureTouch}
               />
@@ -166,6 +180,13 @@ export function ArchiveScreen({ visible, onClose }: Props) {
             </TouchableOpacity>
           </View>
         )}
+
+        {/* Edit Sheet */}
+        <EditScrapSheet
+          scrap={editing}
+          onClose={() => setEditing(null)}
+          onSaved={load}
+        />
       </View>
     </Modal>
   )
@@ -265,6 +286,13 @@ const styles = StyleSheet.create({
   headerLeft: {
     position: 'absolute',
     left: 16,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+  },
+  headerRight: {
+    position: 'absolute',
+    right: 16,
     top: 0,
     bottom: 0,
     justifyContent: 'center',

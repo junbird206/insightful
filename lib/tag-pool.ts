@@ -1,6 +1,13 @@
+import { syncTagPoolToExtension } from './pending-queue'
 import { supabase } from './supabase'
 
 const DEFAULT_TAGS = ['AI활용', '학교생활', '주식', '운동', '콘텐츠아이디어', '자기계발']
+
+// Mirror the pool to the iOS Share Extension whenever it changes — best-effort,
+// never block the main operation on the bridge call.
+function mirror(tags: string[]): void {
+  syncTagPoolToExtension(tags).catch(() => {})
+}
 
 export async function getTagPool(): Promise<string[]> {
   const { data, error } = await supabase
@@ -11,10 +18,13 @@ export async function getTagPool(): Promise<string[]> {
   // 행이 없으면 기본 태그로 초기화
   if (error || !data) {
     await supabase.from('tag_pools').upsert({ tags: DEFAULT_TAGS })
+    mirror(DEFAULT_TAGS)
     return DEFAULT_TAGS
   }
 
-  return (data.tags as string[]) ?? DEFAULT_TAGS
+  const tags = (data.tags as string[]) ?? DEFAULT_TAGS
+  mirror(tags)
+  return tags
 }
 
 export async function addTagToPool(tag: string): Promise<string[]> {
@@ -22,6 +32,7 @@ export async function addTagToPool(tag: string): Promise<string[]> {
   if (pool.includes(tag)) return pool
   const updated = [...pool, tag]
   await supabase.from('tag_pools').upsert({ tags: updated })
+  mirror(updated)
   return updated
 }
 
@@ -29,6 +40,7 @@ export async function renameTagInPool(oldTag: string, newTag: string): Promise<s
   const pool = await getTagPool()
   const updated = pool.map((t) => (t === oldTag ? newTag : t))
   await supabase.from('tag_pools').upsert({ tags: updated })
+  mirror(updated)
   return updated
 }
 
@@ -36,5 +48,6 @@ export async function removeTagFromPool(tag: string): Promise<string[]> {
   const pool = await getTagPool()
   const updated = pool.filter((t) => t !== tag)
   await supabase.from('tag_pools').upsert({ tags: updated })
+  mirror(updated)
   return updated
 }

@@ -82,6 +82,9 @@ export default function AddScreen() {
   const [linkPreview, setLinkPreview] = useState<LinkPreview | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
 
+  // Memo — "draft placeholder" mode
+  const [memoTouched, setMemoTouched] = useState(false)
+
   // Remind
   const [presets, setPresets] = useState<RemindPresetConfig[]>([])
   const [activePresetId, setActivePresetId] = useState<string | null>('none') // 'none' or preset id
@@ -170,6 +173,7 @@ export default function AddScreen() {
     setUrl('')
     setBucket(null)
     setMemo('')
+    setMemoTouched(false)
     setSelectedTags([])
     setActivePresetId('none')
     setRemindDate(null)
@@ -209,6 +213,9 @@ export default function AddScreen() {
         linkPreview: previewReady ? linkPreview : null,
       })
 
+      // If the user never touched the memo field, adopt the suggested memo
+      const effectiveMemo = !memoTouched && !memo.trim() ? suggestedMemo : memo.trim()
+
       const scrap: Scrap = {
         id: Date.now().toString(),
         originalUrl: trimmedUrl,
@@ -221,7 +228,7 @@ export default function AddScreen() {
         rawTitle: previewReady ? linkPreview?.rawTitle : undefined,
         rawDescription: previewReady ? linkPreview?.rawDescription : undefined,
         bucket,
-        memo: memo.trim() || '',
+        memo: effectiveMemo,
         tags: selectedTags,
         starred: false,
         remindAt: remindDate ? remindDate.toISOString() : null,
@@ -232,6 +239,7 @@ export default function AddScreen() {
       setUrl('')
       setBucket(null)
       setMemo('')
+      setMemoTouched(false)
       setSelectedTags([])
       setActivePresetId('none')
       setRemindDate(null)
@@ -353,21 +361,24 @@ export default function AddScreen() {
             {/* Memo */}
             <View>
               <Text style={styles.label}>메모 <Text style={styles.labelOptional}>(선택)</Text></Text>
-              {!memo && previewLoading ? (
-                <Text style={styles.suggestedHint}>링크 분석 중…</Text>
-              ) : !memo && (bucket || linkPreview || selectedTags.length > 0) ? (
-                <Text style={styles.suggestedHint}>{suggestedMemoPreview}</Text>
-              ) : null}
-              <TextInput
-                style={[styles.input, styles.memoInput]}
-                placeholder="왜 저장했는지 간단히 메모"
-                placeholderTextColor="#aaa"
-                value={memo}
-                onChangeText={setMemo}
-                multiline
-                returnKeyType="done"
-                blurOnSubmit
-              />
+              <View>
+                {!memoTouched && !memo && suggestedMemoPreview ? (
+                  <Text style={styles.memoOverlay} pointerEvents="none">
+                    {previewLoading ? '링크 분석 중…' : suggestedMemoPreview}
+                  </Text>
+                ) : null}
+                <TextInput
+                  style={[styles.input, styles.memoInput, !memoTouched && !memo && suggestedMemoPreview ? styles.memoInputTransparent : null]}
+                  placeholder={memoTouched || memo ? '왜 저장했는지 간단히 메모' : ''}
+                  placeholderTextColor="#aaa"
+                  value={memo}
+                  onChangeText={setMemo}
+                  onFocus={() => setMemoTouched(true)}
+                  multiline
+                  returnKeyType="done"
+                  blurOnSubmit
+                />
+              </View>
             </View>
 
             {/* Remind */}
@@ -485,6 +496,16 @@ const styles = StyleSheet.create({
     borderColor: '#E8E8E8',
   },
   memoInput: { minHeight: 80, textAlignVertical: 'top' },
+  memoInputTransparent: { color: 'transparent' },
+  memoOverlay: {
+    position: 'absolute',
+    top: 14,
+    left: 16,
+    right: 16,
+    fontSize: 15,
+    color: '#AAAAAA',
+    zIndex: 1,
+  },
 
   // URL input with inline clear button
   urlInputRow: {
@@ -548,14 +569,6 @@ const styles = StyleSheet.create({
   },
   tagChipText: { fontSize: 13, fontWeight: '500', color: '#888888' },
   tagChipTextSelected: { color: '#FFFFFF' },
-
-  // Suggested memo hint
-  suggestedHint: {
-    fontSize: 12,
-    color: '#AAAAAA',
-    marginBottom: 4,
-    fontStyle: 'italic',
-  },
 
   // Remind
   remindRow: { gap: 8 },

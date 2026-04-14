@@ -1,15 +1,17 @@
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Animated, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { Alert, Animated, FlatList, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import Swipeable from 'react-native-gesture-handler/Swipeable'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { ArchiveScreen } from '@/components/archive-screen'
+import { EditScrapSheet } from '@/components/edit-scrap-sheet'
 import { MyPage } from '@/components/my-page'
 import { ScrapCard } from '@/components/scrap-card'
 import { SideMenu } from '@/components/side-menu'
 import { UndoToast } from '@/components/undo-toast'
 import { archiveScrap, bulkArchiveScraps, bulkDeleteScraps, deleteScrap, getAllScraps, updateScrapFields } from '@/lib/storage'
+import { addTagToPool, getTagPool } from '@/lib/tag-pool'
 import { Bucket, Scrap } from '@/types/scrap'
 
 type UndoState = {
@@ -43,6 +45,14 @@ export function FeedScreen({ filter }: Props) {
   // Multi-select
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // Tag filter
+  const [tagPool, setTagPool] = useState<string[]>([])
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [tagSheetOpen, setTagSheetOpen] = useState(false)
+
+  // Edit sheet
+  const [editing, setEditing] = useState<Scrap | null>(null)
 
   // Tracks the currently-swiped-open card so any other interaction
   // (swiping another card, scrolling, tapping any card) closes it.
@@ -135,9 +145,9 @@ export function FeedScreen({ filter }: Props) {
 
   // ─── Multi-select ───────────────────────────────────────────────────────────
 
-  function enterSelectMode(id: string) {
+  function enterSelectMode() {
     setSelectMode(true)
-    setSelectedIds(new Set([id]))
+    setSelectedIds(new Set())
   }
 
   function exitSelectMode() {
@@ -202,6 +212,7 @@ export function FeedScreen({ filter }: Props) {
   useFocusEffect(
     useCallback(() => {
       loadScraps()
+      getTagPool().then(setTagPool)
     }, []),
   )
 
@@ -224,12 +235,25 @@ export function FeedScreen({ filter }: Props) {
     }
   }, [])
 
+  function toggleTagFilter(tag: string) {
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+    )
+  }
+
   let displayed = filter === 'recent'
     ? scraps
     : scraps.filter((s) => s.bucket === filter)
 
   if (starredOnly) {
     displayed = displayed.filter((s) => s.starred)
+  }
+
+  // Intersection filter: show only scraps that have ALL selected tags
+  if (selectedTags.length > 0) {
+    displayed = displayed.filter((s) =>
+      selectedTags.every((tag) => s.tags?.includes(tag)),
+    )
   }
 
   return (
@@ -249,33 +273,84 @@ export function FeedScreen({ filter }: Props) {
             <View style={styles.titleRight}>
               <TouchableOpacity
                 onPress={() => setStarredOnly((v) => !v)}
-                activeOpacity={0.7}
-                style={[styles.filterBtn, starredOnly && styles.filterBtnActive]}
+                activeOpacity={0.5}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               >
-                <Text style={[styles.filterBtnText, starredOnly && styles.filterBtnTextActive]}>
+                <Text style={[styles.actionText, starredOnly && styles.actionTextActive]}>
                   ★ 중요만
                 </Text>
               </TouchableOpacity>
+              <Text style={styles.actionDivider}>|</Text>
+              <TouchableOpacity
+                onPress={enterSelectMode}
+                activeOpacity={0.5}
+                disabled={displayed.length === 0}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+              >
+                <Text style={[styles.actionText, displayed.length === 0 && styles.actionTextDisabled]}>
+                  선택
+                </Text>
+              </TouchableOpacity>
+              <Text style={styles.actionDivider}>|</Text>
               <TouchableOpacity
                 onPress={() => setArchiveOpen(true)}
-                activeOpacity={0.6}
-                style={styles.iconBtn}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.5}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               >
-                <Text style={styles.iconBtnText}>⊡</Text>
+                <Text style={styles.actionText}>보관함</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => setMenuOpen(true)}
                 activeOpacity={0.6}
-                style={styles.iconBtn}
+                style={styles.menuBtn}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Text style={styles.iconBtnText}>☰</Text>
+                <Text style={styles.menuBtnText}>☰</Text>
               </TouchableOpacity>
             </View>
           </>
         )}
       </View>
+
+      {/* Tag filter bar */}
+      {tagPool.length > 0 && (
+        <View style={styles.tagBarWrap}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tagBarScroll}
+          >
+            {tagPool.map((tag) => {
+              const active = selectedTags.includes(tag)
+              return (
+                <TouchableOpacity
+                  key={tag}
+                  style={[styles.tagChip, active && styles.tagChipActive]}
+                  onPress={() => toggleTagFilter(tag)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[styles.tagChipText, active && styles.tagChipTextActive]}
+                    numberOfLines={1}
+                  >
+                    #{tag}
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
+          </ScrollView>
+          {/* Overlay: `...` button floating above scroll */}
+          <View style={styles.tagMoreOverlay} pointerEvents="box-none">
+            <TouchableOpacity
+              style={styles.tagMoreBtn}
+              onPress={() => setTagSheetOpen(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.tagMoreText}>...</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       <FlatList
         data={displayed}
@@ -293,7 +368,7 @@ export function FeedScreen({ filter }: Props) {
               onDelete={handleDelete}
               onArchive={handleArchive}
               onToggleStar={handleToggleStar}
-              onLongPress={() => enterSelectMode(item.id)}
+              onLongPress={() => setEditing(item)}
               onSwipeOpen={handleSwipeOpen}
               onShouldCaptureTouch={handleShouldCaptureTouch}
             />
@@ -373,6 +448,70 @@ export function FeedScreen({ filter }: Props) {
 
       {/* Archive Screen */}
       <ArchiveScreen visible={archiveOpen} onClose={() => setArchiveOpen(false)} />
+
+      {/* Edit Sheet */}
+      <EditScrapSheet
+        scrap={editing}
+        onClose={() => setEditing(null)}
+        onSaved={loadScraps}
+      />
+
+      {/* Tag sheet (full tag list) */}
+      <Modal
+        visible={tagSheetOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setTagSheetOpen(false)}
+      >
+        <SafeAreaView style={styles.tagSheetContainer} edges={['top', 'bottom']}>
+          <View style={styles.tagSheetHeader}>
+            <Text style={styles.tagSheetTitle}>태그 필터</Text>
+            <TouchableOpacity onPress={() => setTagSheetOpen(false)} activeOpacity={0.6}>
+              <Text style={styles.tagSheetClose}>완료</Text>
+            </TouchableOpacity>
+          </View>
+          {selectedTags.length > 0 && (
+            <TouchableOpacity
+              style={styles.tagSheetClearBtn}
+              onPress={() => { setSelectedTags([]); setTagSheetOpen(false) }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.tagSheetClearText}>필터 초기화</Text>
+            </TouchableOpacity>
+          )}
+          <View style={styles.tagSheetGrid}>
+            {tagPool.map((tag) => {
+              const active = selectedTags.includes(tag)
+              return (
+                <TouchableOpacity
+                  key={tag}
+                  style={[styles.tagSheetChip, active && styles.tagSheetChipActive]}
+                  onPress={() => toggleTagFilter(tag)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.tagSheetChipText, active && styles.tagSheetChipTextActive]}>
+                    #{tag}
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
+            <TouchableOpacity
+              style={styles.tagSheetAddBtn}
+              onPress={() => {
+                Alert.prompt('새 태그 추가', '태그 이름을 입력하세요', async (text) => {
+                  const trimmed = text?.trim()
+                  if (!trimmed) return
+                  const updated = await addTagToPool(trimmed)
+                  setTagPool(updated)
+                })
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.tagSheetAddText}>+</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -509,30 +648,119 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   appTitle: { fontSize: 28, fontWeight: '700', color: '#111111', letterSpacing: -0.5 },
-  titleRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  titleRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 
   selectTitle: { fontSize: 17, fontWeight: '700', color: '#111111' },
   selectCancel: { fontSize: 15, fontWeight: '600', color: '#3B82F6' },
 
-  filterBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  // Action bar — text-only controls (no pill background)
+  actionText: { fontSize: 13, fontWeight: '600', color: '#AAAAAA' },
+  actionTextActive: { color: '#D97706' },
+  actionTextDisabled: { color: '#D5D5D5' },
+  actionDivider: { fontSize: 12, color: '#DDDDDD' },
+  menuBtn: {
+    width: 32,
+    height: 32,
     borderRadius: 16,
-    backgroundColor: '#F0F0F0',
-  },
-  filterBtnActive: { backgroundColor: '#FEF3C7' },
-  filterBtnText: { fontSize: 13, fontWeight: '600', color: '#999999' },
-  filterBtnTextActive: { color: '#D97706' },
-
-  iconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
     backgroundColor: '#F0F0F0',
     alignItems: 'center',
     justifyContent: 'center',
+    marginLeft: 2,
   },
-  iconBtnText: { fontSize: 18, color: '#555555', lineHeight: 20 },
+  menuBtnText: { fontSize: 16, color: '#555555', lineHeight: 18 },
+
+  // Tag bar — pill filter chips with overlay `...`
+  tagBarWrap: {
+    position: 'relative',
+    paddingBottom: 10,
+  },
+  tagBarScroll: {
+    paddingLeft: 20,
+    paddingRight: 52,  // space under the overlay so last chip isn't hidden
+    gap: 8,
+  },
+  tagChip: {
+    height: 28,
+    paddingHorizontal: 10,
+    justifyContent: 'center',
+    borderRadius: 14,
+    backgroundColor: '#F0F0F0',
+  },
+  tagChipActive: { backgroundColor: '#111111' },
+  tagChipText: { fontSize: 12, fontWeight: '500', color: '#999999' },
+  tagChipTextActive: { color: '#FFFFFF' },
+  // Overlay container — floats above ScrollView on the right
+  tagMoreOverlay: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  tagMoreBtn: {
+    height: 28,
+    paddingHorizontal: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 14,
+    backgroundColor: '#EBEBEB',
+    marginRight: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: -4, height: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  tagMoreText: { fontSize: 12, fontWeight: '700', color: '#999999' },
+
+  // Tag sheet (full tag list modal)
+  tagSheetContainer: { flex: 1, backgroundColor: '#FAFAFA' },
+  tagSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+  },
+  tagSheetTitle: { fontSize: 17, fontWeight: '700', color: '#111111' },
+  tagSheetClose: { fontSize: 16, fontWeight: '500', color: '#555555' },
+  tagSheetClearBtn: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: '#FEE2E2',
+    alignSelf: 'flex-start',
+  },
+  tagSheetClearText: { fontSize: 13, fontWeight: '600', color: '#DC2626' },
+  tagSheetGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 20,
+    gap: 10,
+  },
+  tagSheetChip: {
+    height: 36,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+    borderRadius: 18,
+    backgroundColor: '#F0F0F0',
+  },
+  tagSheetChipActive: { backgroundColor: '#111111' },
+  tagSheetChipText: { fontSize: 14, fontWeight: '500', color: '#888888' },
+  tagSheetChipTextActive: { color: '#FFFFFF' },
+  tagSheetAddBtn: {
+    height: 36,
+    width: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 18,
+    backgroundColor: '#E0E7FF',
+  },
+  tagSheetAddText: { fontSize: 18, fontWeight: '600', color: '#4F46E5' },
 
   list: { paddingTop: 4, paddingBottom: 100 },
   empty: { marginTop: 80, alignItems: 'center', paddingHorizontal: 40 },
