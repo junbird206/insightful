@@ -40,6 +40,7 @@ SNS 피드에서 발견한 유용한 게시물을 저장하고, 나중에 다시
 - **suggestedMemo**: 링크 프리뷰 기반 자동 메모 초안 생성 (유료 API 미사용)
   - 우선순위: rawTitle → excerpt(본문 첫 문단) → rawDescription → 태그 → siteName
   - 형식: `{topic} — {읽어보기|실천해보기}`
+- **추천 메모 UX**: 메모 필드에 회색 오버레이 텍스트로 표시 (`pointerEvents="none"`). 터치하면 사라지고 직접 입력 가능. 미터치 시 추천 메모가 저장값으로 사용됨.
 - URL 입력 시 500ms debounce 후 백그라운드 메타데이터+excerpt 추출 (`extractLinkPreview`)
 - 프리뷰가 이미 도착한 상태에서 저장하면 `status: 'done'`으로 바로 완료 (중복 fetch 방지)
 - 프리뷰 로딩 중 저장 시 기존 `processScrap` 백그라운드 처리 경로 사용
@@ -49,16 +50,37 @@ SNS 피드에서 발견한 유용한 게시물을 저장하고, 나중에 다시
 
 ### 저장 (Share Extension — iOS 공유 시트)
 - Safari/Instagram/X 등 외부 앱에서 공유 → insightful 선택
-- **컴팩트 하단 카드 시트 UI** (에어드롭 스타일, 전체 화면 아님)
+- **컴팩트 하단 카드 시트 UI** (UIKit 네이티브, Auto Layout 기반 bottom sheet)
+  - UIScrollView 안에 UIStackView → 내용 길이에 맞게 카드 높이 자동 조절
+  - `cardView.top >= safeArea.top + 20` 제한 → 내용 초과 시 스크롤
+  - `scrollView.frameHeight = contentStack.height` (priority 750) → 카드가 내용을 감싸되, 화면 초과 시 깨짐 없이 스크롤
   - 공유된 URL 호스트명 표시
-  - bucket 선택 (읽을 거리 / 해볼 거리)
-  - 한 줄 메모 입력
-  - 리마인드 프리셋 (없음 / 오늘 저녁 / 내일 아침)
+  - bucket 선택 (📖 To Read / ⚡ To Do — 본앱과 동일 라벨)
+  - **태그 칩 바**: App Groups UserDefaults에서 tagPool 로드, 수평 스크롤, 선택 토글 + "추가" 버튼
+  - 한 줄 메모 입력 + **추천 메모** (회색 텍스트, 터치 시 클리어 — Add 화면과 동일 UX)
+  - 리마인드 프리셋 (없음 / 오늘 저녁 18:00 / 내일 아침 08:00 — 본앱 preset과 시간 일치)
+  - 리마인드 선택 시: 🔔 미리보기 라벨 + UIDatePicker(.wheels) 표시 (isHidden 토글, 동적 삽입 아님)
   - 저장 버튼 → "저장됨" 피드백 → 자동 닫힘
+  - **키보드 대응**: `keyboardWillChangeFrameNotification` 관찰 → cardBottom constraint 조정 → 카드 전체가 키보드 위로 이동
 - 본앱을 열지 않고 extension 안에서 저장 완료
 - **저장 방식**: App Groups UserDefaults (`group.com.juny.insightful`) pending queue
-- **본앱 연동**: 본앱 foreground 시 pending queue 읽어서 처리 (미구현 — 다음 작업)
-- 기술 구현: 커스텀 `UIViewController` (SLComposeServiceViewController 제거), 프로그래밍 방식 UI, NSExtensionPrincipalClass 방식
+- **저장 데이터**: url, bucket, memo, remindAt, createdAt, tagsJson (JSON-encoded string array)
+- **본앱 연동**: 본앱 foreground 시 pending queue 읽어서 import (`lib/import-pending.ts`)
+- 기술 구현: 커스텀 `UIViewController`, 프로그래밍 방식 UI, NSExtensionPrincipalClass 방식
+
+### 네이티브 브릿지 (InsightfulPendingQueue)
+- **Swift 모듈**: `ios/insightful/InsightfulPendingQueue.swift`
+- **Obj-C 브릿지**: `ios/insightful/InsightfulPendingQueue.m` (RCT_EXTERN_MODULE)
+- **Bridging Header**: `ios/insightful/insightful-Bridging-Header.h` → `#import <React/RCTBridgeModule.h>`
+- **기능**: `getPending()`, `clearPending()`, `setTagPool(tags)` — 모두 App Groups UserDefaults 경유
+- **태그 동기화 흐름**: 본앱 `getTagPool()` → Supabase에서 로드 → `syncTagPoolToExtension()` → native module → UserDefaults → Share Extension `loadTagPool()`
+
+### 로컬 알림 (expo-notifications)
+- `lib/notifications.ts`: `requestNotificationPermission()`, `scheduleReminder()`, `cancelReminder()`, `cancelReminders()`
+- 스크랩 ID를 notification identifier로 사용 → 정확한 취소/재스케줄
+- `lib/storage.ts`의 CRUD에 훅: save→schedule, update→reschedule, delete/archive→cancel
+- `app/_layout.tsx`에서 로그인 후 알림 권한 요청
+- **aps-environment 이슈**: `expo-notifications` 플러그인이 자동 주입하는 Push entitlement이 무료 Personal Team에서 빌드 에러 유발 → `plugins/strip-push-entitlement.js` config plugin으로 제거
 
 ### 메타데이터 추출 (lib/extract.ts)
 - `extractLinkPreview(url, {timeoutMs, signal})` → `{rawTitle, rawDescription, imageUrl, siteName, excerpt}`
@@ -68,22 +90,31 @@ SNS 피드에서 발견한 유용한 게시물을 저장하고, 나중에 다시
 - NOISE_PATTERNS 필터 (cookie, subscribe, copyright 등)
 
 ### 피드 (FeedScreen)
+- **상단 액션 바**: 텍스트 버튼 스타일 (★ 중요만 | 선택 | 보관함) + ☰ 메뉴 pill 버튼 — 태그 바와 시각적 계층 분리
+- **태그 필터 바** (액션 바 아래):
+  - 수평 ScrollView에 pill 칩 (height 28, fontSize 12)
+  - 오른쪽 끝에 `...` 버튼이 `position: absolute`로 오버레이 (그림자 효과로 플로팅 느낌)
+  - `...` 탭 → pageSheet 모달로 전체 태그 목록 (flexWrap grid)
+  - 전체 태그 시트에서 태그 토글 + 필터 초기화 + **태그 추가 (+) 버튼** (보라색 계열)
+  - 다중 태그 선택 → **교집합(AND)** 필터
 - 카드 좌 스와이프 → 보관 / 우 스와이프 → 삭제
 - 스와이프 자동 닫힘: 다른 카드 스와이프, 스크롤, 다른 카드 탭 시 열린 스와이프 자동 복귀 (iOS Mail 패턴)
 - swipe delete + undo toast (4초, 복수 카드 지원)
 - 보관 toast ("보관함으로 이동됨")
-- ★ 중요만 필터, 보관함 버튼, 사이드 메뉴
 - **다중 선택 모드**: 카드 long press → 체크박스 UI → 일괄 보관/삭제
-  - 일괄 보관: 확인 없이 즉시
-  - 일괄 삭제: Alert 확인 → undo toast
-  - 스와이프 비활성, FAB 숨김
+
+### 편집 시트 (EditScrapSheet)
+- 카드 long press → Modal pageSheet
+- bucket 변경, 태그 선택, 메모 편집, 리마인드 변경
+- **하단 full-width 저장 버튼** (상단 텍스트 버튼에서 변경)
+- dirty check → 변경 없으면 저장 버튼 비활성화
+- 취소 시 변경사항 있으면 Alert 확인
 
 ### 보관함 (ArchiveScreen)
 - Modal pageSheet 형태, 보관된 카드만 표시
 - 카드 우 스와이프 → 복원
 - **다중 선택 모드**: long press → 체크박스 UI → 일괄 복구
 - 스와이프 자동 닫힘 동일 적용
-- **헤더**: 커스텀 정렬 — 제목 절대 중앙, 닫기 버튼 좌측 absolute 배치, pageSheet이므로 SafeAreaView 불필요
 
 ### 카드 (ScrapCard)
 - 읽음 상태: opacity 아닌 **배경색(#F3F3F3) + 텍스트 톤 다운**으로 표현 (스와이프 시 오버레이 방지)
@@ -93,22 +124,23 @@ SNS 피드에서 발견한 유용한 게시물을 저장하고, 나중에 다시
 - 리마인드 라벨 (지남/오늘/내일/날짜)
 
 ### 태그 시스템
-- **공용 tag pool** 기반 — 저장 화면에서는 기존 태그 선택만, 생성은 태그 관리에서
-- 검색창 아래 **태그 바**(가로 스크롤) + **전체 태그 시트**(⋯ 버튼)
+- **공용 tag pool** 기반 (Supabase `tag_pools` 테이블)
+- 기본 태그: AI활용, 학교생활, 주식, 운동, 콘텐츠아이디어, 자기계발
+- 메인 화면 상단 **태그 필터 바** (수평 스크롤 + `...` 오버레이 버튼)
+- `...` → 전체 태그 시트 (flexWrap grid + 추가/초기화)
 - 다중 태그 선택은 **AND(교집합)** — 회수 정밀도 우선
-- 태그 시트에서 적용한 태그만 좌측 promote, 인라인 탭은 순서 변경 없음 (`promotedTags` 패턴)
-- 태그 관리: 생성 / 이름 변경 / 삭제 (long press)
-
-### 회수·필터
-- memo 기반 텍스트 검색
-- 태그 필터 (AND)
-- starred 필터
-- unread 필터
+- 태그 관리: 생성(Add 화면, 태그 시트, Share Extension) / 이름 변경 / 삭제 (long press)
+- **Share Extension 동기화**: 본앱 → `InsightfulPendingQueue.setTagPool()` → App Groups UserDefaults → Extension `loadTagPool()`
 
 ### 리마인드
-- 프리셋 기반 날짜 선택 + DateTimePicker 커스텀
+- 프리셋: 오늘 저녁 (18:00), 내일 아침 (08:00) — AsyncStorage에 저장, 커스터마이즈 가능
+- RemindPicker: 4열 커스텀 Picker (날짜, 오전/오후, 시, 분)
 - 카드에 리마인드 라벨 표시 (지남 시 회색 처리)
-- 실제 푸시 알림은 미구현 (expo-notifications 예정)
+- **로컬 알림 구현 완료**: expo-notifications, scrap ID 기반 스케줄/취소
+
+### UI/UX 전역
+- **StatusBar**: `style="dark"` 강제 (흰색 배경에서 시계/배터리 등 검정색으로 표시)
+- **테마**: #111111 (fg), #FAFAFA (bg), #F0F0F0 (chip bg), #888888 (secondary text)
 
 ---
 
@@ -117,7 +149,9 @@ SNS 피드에서 발견한 유용한 게시물을 저장하고, 나중에 다시
 - Supabase (Auth + Postgres DB + RLS)
 - AsyncStorage (세션 persistence)
 - expo-router (탭 네비게이션 + 인증 라우팅)
+- expo-notifications (로컬 알림)
 - react-native-gesture-handler (Swipeable) + react-native-reanimated
+- @react-native-picker/picker (리마인드 wheel picker)
 - expo-dev-client (development build)
 - TypeScript strict mode
 
@@ -129,42 +163,43 @@ SNS 피드에서 발견한 유용한 게시물을 저장하고, 나중에 다시
 - **Expo workflow**: Development Build (expo-dev-client)
 - **Xcode**: 26.4 (iOS SDK 26.4)
 - **DEVELOPMENT_TEAM**: `KHBBH8NY4T` (무료 Apple ID — 7일 서명)
+- **GitHub**: `https://github.com/junbird206/insightful.git` (origin/main)
 
 ---
 
-## iOS 네이티브 설정 (2026-04-10 기준)
+## iOS 네이티브 설정
 
 ### Xcode 프로젝트 구조
-- `ios/` 폴더는 `npx expo prebuild --platform ios`로 생성 (`.gitignore`에 포함, 커밋 안 함)
-- **objectVersion**: 56 (CocoaPods 호환 — Xcode 16+ 기본값 70에서 수동 다운그레이드)
-- **주의**: Xcode가 프로젝트를 다시 열면 objectVersion을 70으로 올릴 수 있음 → `pod install` 깨짐 → 56으로 되돌려야 함
+- `ios/` 폴더는 `npx expo prebuild --platform ios`로 생성
+- **objectVersion**: 56 (CocoaPods 호환)
 
 ### Share Extension (InsightfulShare)
 - **Target**: InsightfulShare (`com.juny.insightful.InsightfulShare`)
 - **파일 위치**: `ios/InsightfulShare/`
-  - `ShareViewController.swift` — 커스텀 UIViewController (하단 카드 시트)
+  - `ShareViewController.swift` — 커스텀 UIViewController (하단 카드 시트, UIKit Auto Layout)
   - `Info.plist` — NSExtensionPrincipalClass 방식 (Storyboard 아님)
   - `InsightfulShare.entitlements` — App Groups
-  - `Base.lproj/MainInterface.storyboard` — 미사용 (레거시, 제거 가능)
-- **Scheme**: `insightful.xcscheme`에 InsightfulShare BuildActionEntry 명시적 추가됨
-- **pbxproj 수동 관리 항목**:
-  - PBXFileSystemSynchronizedRootGroup 제거 → 전통적 PBXGroup + 명시적 PBXFileReference로 변환
-  - objectVersion 56 유지
-  - InsightfulShare Sources/Resources 빌드 페이즈에 파일 명시적 등록
-  - Embed Foundation Extensions (dstSubfolderSpec=13) → PlugIns/InsightfulShare.appex
+- **pbxproj**: InsightfulShare target, Embed Foundation Extensions, 수동 관리 필수
+
+### Native Module (InsightfulPendingQueue)
+- **파일 위치**: `ios/insightful/`
+  - `InsightfulPendingQueue.swift` — getPending, clearPending, setTagPool
+  - `InsightfulPendingQueue.m` — RCT_EXTERN_MODULE 브릿지
+  - `insightful-Bridging-Header.h` — `#import <React/RCTBridgeModule.h>`
+- **pbxproj**: main target (insightful)의 Compile Sources에 등록됨
 
 ### App Groups
 - **identifier**: `group.com.juny.insightful`
-- 양쪽 entitlements에 등록 완료:
+- 양쪽 entitlements에 등록:
   - `ios/insightful/insightful.entitlements`
   - `ios/InsightfulShare/InsightfulShare.entitlements`
 
+### Config Plugins
+- `plugins/strip-push-entitlement.js` — expo-notifications가 주입하는 aps-environment 제거 (무료 Personal Team 빌드 호환)
+
 ### 빌드 명령어
 ```bash
-# xcode-select 확인 (CommandLineTools가 아닌 Xcode.app이어야 함)
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-
-# pod install + 빌드
 cd ios && pod install && cd ..
 npx expo run:ios --device
 
@@ -172,8 +207,8 @@ npx expo run:ios --device
 rm -rf ~/Library/Developer/Xcode/DerivedData/insightful-*
 ```
 
-### 알려진 이슈
-- `expo prebuild --clean` 실행 시 ios/ 폴더가 재생성되므로, Share Extension 관련 수동 설정(InsightfulShare target, scheme, entitlements, objectVersion 56)이 모두 사라짐 → prebuild 후 재설정 필요
+### 중요 규칙
+- **`npx expo prebuild --clean` 금지** — Share Extension target, App Groups, native module이 모두 파괴됨. 반드시 사전 경고 후 승인 필요.
 - CocoaPods가 objectVersion 70을 지원하지 않음 → 56 유지 필수
 - 무료 Apple ID는 7일마다 앱 서명 만료 → 재빌드 필요
 
@@ -189,26 +224,33 @@ app/
     index.tsx      — Recent 탭 (FeedScreen filter='recent')
     read.tsx       — To Read 탭
     do.tsx         — To Do 탭
-    add.tsx        — 링크 저장 화면
-  _layout.tsx      — 루트 레이아웃 (인증 분기)
+    add.tsx        — 링크 저장 화면 (추천 메모 오버레이)
+  _layout.tsx      — 루트 레이아웃 (인증 분기 + 알림 권한 요청)
 
 components/
-  feed-screen.tsx  — 피드 화면 (스와이프, 다중선택, undo, 보관)
+  feed-screen.tsx  — 피드 화면 (태그 필터 바, 스와이프, 다중선택, undo, 보관)
   scrap-card.tsx   — 카드 컴포넌트 (읽음 상태, 리마인드 등)
-  archive-screen.tsx — 보관함 Modal (커스텀 헤더 정렬)
+  edit-scrap-sheet.tsx — 편집 모달 (하단 저장 버튼)
+  archive-screen.tsx — 보관함 Modal
+  remind-picker.tsx — 리마인드 4열 Picker
   undo-toast.tsx   — 삭제 undo 토스트
-  remind-picker.tsx — 리마인드 DateTimePicker
   side-menu.tsx    — 사이드 메뉴
   my-page.tsx      — 마이페이지
 
 lib/
   auth.tsx         — Supabase Auth + 세션 관리
-  storage.ts       — Supabase CRUD (save, get, update, delete, bulk ops)
+  storage.ts       — Supabase CRUD + 알림 스케줄 훅
   extract.ts       — URL 메타데이터 + 본문 excerpt 추출
   suggested-memo.ts — 링크 프리뷰 기반 suggestedMemo 생성
-  process.ts       — 백그라운드 스크랩 처리 (fetch → suggestedMemo 재생성 → DB 업데이트)
+  process.ts       — 백그라운드 스크랩 처리
   remind-presets.ts — 리마인드 프리셋 설정
-  tag-pool.ts      — 태그 풀 관리
+  tag-pool.ts      — 태그 풀 관리 (Supabase + Extension sync)
+  notifications.ts — 로컬 알림 스케줄/취소
+  pending-queue.ts — Native module 브릿지 (Share Extension ↔ 본앱)
+  import-pending.ts — pending queue import 로직
+
+plugins/
+  strip-push-entitlement.js — aps-environment 제거 config plugin
 
 types/
   scrap.ts         — Scrap, Bucket, ScrapStatus, SourcePlatform 타입
@@ -216,19 +258,10 @@ types/
 supabase/
   schema.sql       — DB 스키마
 
-ios/ (gitignore, prebuild로 생성)
-  insightful/      — 메인 앱 네이티브 코드
+ios/
+  insightful/      — 메인 앱 네이티브 코드 + InsightfulPendingQueue 모듈
   InsightfulShare/  — Share Extension (수동 추가)
 ```
-
----
-
-## MVP 제외 항목
-- To Go bucket / regionLabel / areaLabel / 지도 기반 UX
-- AI API 호출 (유료 API 미사용 원칙)
-- 자동 태그 부착
-- 실제 푸시 리마인드 (expo-notifications)
-- reference / 미감 / 코디 등 초기 실험 기능
 
 ---
 
@@ -241,15 +274,24 @@ ios/ (gitignore, prebuild로 생성)
 6. ~~Share Extension 기본 동작 (공유 시트 노출)~~ ✅
 7. ~~Share Extension 커스텀 UI (컴팩트 카드 시트)~~ ✅
 8. ~~보관함 헤더 레이아웃 polish~~ ✅
+9. ~~로컬 알림 구현 (expo-notifications)~~ ✅
+10. ~~Push entitlement 빌드 에러 해결~~ ✅
+11. ~~StatusBar 다크 모드 강제~~ ✅
+12. ~~편집 시트 하단 저장 버튼 레이아웃~~ ✅
+13. ~~Share Extension UI 전면 재작성 (태그, picker, 추천 메모, 키보드 대응)~~ ✅
+14. ~~InsightfulPendingQueue 네이티브 모듈 복원~~ ✅
+15. ~~Add 화면 추천 메모 오버레이 UX~~ ✅
+16. ~~메인 화면 태그 필터 바 구현 (스크롤 + ... 오버레이 + 전체 태그 시트)~~ ✅
+17. ~~액션 바 / 태그 바 시각적 계층 분리~~ ✅
+18. ~~태그 시트에서 태그 추가(+) 기능~~ ✅
+19. ~~GitHub 원격 레포 연결 + push~~ ✅
 
 ## 다음 작업 (우선순위)
-1. **Share Extension 실기 테스트** — 빌드 후 공유 시트에서 커스텀 UI 확인
-2. **본앱에서 pending queue 읽기** — App Groups UserDefaults → 본앱 foreground 시 import
-3. **Share Extension 태그 지원** — 본앱이 tag pool을 App Groups에 sync → extension에서 읽기
-4. Supabase 프로젝트 생성 + 환경변수 설정 + schema.sql 실행
-5. 이메일 인증 + 동기화 E2E 테스트
-6. 실제 푸시 리마인드 구현 (expo-notifications)
-7. Apple Developer 등록 → TestFlight 배포
+1. **Share Extension 실기 테스트** — Xcode rebuild 후 공유 시트에서 전체 UI 확인 (태그 바, picker, 키보드)
+2. **Pending queue import 실기 테스트** — Share Extension → 본앱 foreground → 카드 생성 확인
+3. **알림 실기 테스트** — 리마인드 설정 → 시간 경과 후 알림 수신 확인
+4. Apple Developer 등록 → TestFlight 배포
+5. UX polish (카드 디자인, 애니메이션 등)
 
 ---
 
