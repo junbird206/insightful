@@ -54,13 +54,17 @@ SNS 피드에서 발견한 유용한 게시물을 저장하고, 나중에 다시
   - UIScrollView 안에 UIStackView → 내용 길이에 맞게 카드 높이 자동 조절
   - `cardView.top >= safeArea.top + 20` 제한 → 내용 초과 시 스크롤
   - `scrollView.frameHeight = contentStack.height` (priority 750) → 카드가 내용을 감싸되, 화면 초과 시 깨짐 없이 스크롤
-  - 공유된 URL 호스트명 표시
-  - bucket 선택 (📖 To Read / ⚡ To Do — 본앱과 동일 라벨)
-  - **태그 칩 바**: App Groups UserDefaults에서 tagPool 로드, 수평 스크롤, 선택 토글 + "추가" 버튼
-  - 한 줄 메모 입력 + **추천 메모** (회색 텍스트, 터치 시 클리어 — Add 화면과 동일 UX)
-  - 리마인드 프리셋 (없음 / 오늘 저녁 18:00 / 내일 아침 08:00 — 본앱 preset과 시간 일치)
-  - 리마인드 선택 시: 🔔 미리보기 라벨 + UIDatePicker(.wheels) 표시 (isHidden 토글, 동적 삽입 아님)
-  - 저장 버튼 → "저장됨" 피드백 → 자동 닫힘
+  - URL 바: 흰색 bg + `#E8E8E8` border, `cornerRadius: 8` (Add 화면 미러링)
+  - bucket 선택 (📖 To Read / ⚡ To Do) — 흰색 bg + `#E8E8E8` border, `cornerRadius: 8`, `fontSize: 13` (Add 화면 미러링)
+  - **태그 칩 바**: App Groups UserDefaults에서 tagPool 로드, 수평 스크롤, 선택 토글 + "추가" 버튼 — `cornerRadius: 16`, `padding: 8/14`
+  - 메모 입력 — 흰색 bg + `#E8E8E8` border, `cornerRadius: 8`, 높이 48px + **추천 메모** (회색 텍스트, 터치 시 클리어 — Add 화면과 동일 UX)
+  - 리마인드 프리셋 칩: 수평 스크롤, `fontSize: 13`, `cornerRadius: 16`, `padding: 8/14` (Add 화면과 동일 스타일)
+  - 리마인드 선택 시: 🔔 미리보기 라벨 + **4열 커스텀 UIPickerView** 표시 (Add 화면의 RemindPicker와 동일 구조)
+    - 4열: 날짜(오늘/내일/날짜) + 오전/오후 + 시(12시간제) + 분(5분 단위)
+    - `#F7F7F7` 배경, `cornerRadius: 12`, 높이 180px
+    - 날짜 옵션: 오늘부터 30일 (과거 날짜 없음)
+  - 과거 시간 선택 시: 저장 버튼 비활성화(opacity 0.4) + 빨간 경고 "현재 시각 이후로 설정해주세요" (`#DC2626`)
+  - 저장 버튼 "저장" → "저장됨" 피드백 → 자동 닫힘
   - **키보드 대응**: `keyboardWillChangeFrameNotification` 관찰 → cardBottom constraint 조정 → 카드 전체가 키보드 위로 이동
 - 본앱을 열지 않고 extension 안에서 저장 완료
 - **저장 방식**: App Groups UserDefaults (`group.com.juny.insightful`) pending queue
@@ -90,8 +94,21 @@ SNS 피드에서 발견한 유용한 게시물을 저장하고, 나중에 다시
 - NOISE_PATTERNS 필터 (cookie, subscribe, copyright 등)
 
 ### 피드 (FeedScreen)
-- **상단 액션 바**: 텍스트 버튼 스타일 (★ 중요만 | 선택 | 보관함) + ☰ 메뉴 pill 버튼 — 태그 바와 시각적 계층 분리
-- **태그 필터 바** (액션 바 아래):
+- **헤더 구조**:
+  - 좌측: insightful 로고 이미지 (`assets/images/logo-wordmark.png`) — 탭 시 **좌측 사이드 메뉴** 열림
+  - 우측 액션: `★ 중요만 | 선택 | 보관함 | 🔍 검색`
+  - 햄버거(☰) 메뉴 제거 → 로고가 메뉴 진입점 역할
+- **인라인 검색 모드** (우측 🔍 탭):
+  - 헤더가 `[← 뒤로] [검색 입력창] [✕ 클리어]`로 전환, 키보드 자동 포커스
+  - **검색어 대상**: `rawTitle` + `memo` 만 (URL/description/siteName 제외 → 노이즈 감소)
+  - **최소 2글자** 이상 입력 시 텍스트 매칭 실행
+  - **검색 조건 바** (태그 바 자리에 표시, 2행):
+    - Row 1: 기간(`전체`/`오늘`/`이번 주`/`이번 달`) + 분류(`전체`/`To Read`/`To Do`)
+    - Row 2: 출처(`모든 출처`/`Instagram`/`Twitter`/`YouTube`/`Web`) + 태그 칩
+  - 모든 필터는 검색어와 AND 조합
+  - 검색 중 기존 태그 바 숨김, 중요만/태그 필터 일시 해제
+  - 선택 모드와 검색 모드는 배타적 (동시 활성화 불가)
+- **태그 필터 바** (비검색 모드):
   - 수평 ScrollView에 pill 칩 (height 28, fontSize 12)
   - 오른쪽 끝에 `...` 버튼이 `position: absolute`로 오버레이 (그림자 효과로 플로팅 느낌)
   - `...` 탭 → pageSheet 모달로 전체 태그 목록 (flexWrap grid)
@@ -141,6 +158,7 @@ SNS 피드에서 발견한 유용한 게시물을 저장하고, 나중에 다시
 ### UI/UX 전역
 - **StatusBar**: `style="dark"` 강제 (흰색 배경에서 시계/배터리 등 검정색으로 표시)
 - **테마**: #111111 (fg), #FAFAFA (bg), #F0F0F0 (chip bg), #888888 (secondary text)
+- **디자인 일관성 원칙**: Share Extension UI는 Add 화면의 미러 버전 — 같은 색상, 같은 cornerRadius, 같은 padding, 같은 picker 구조를 사용. 사용자가 공유 시트에서도 동일한 앱 경험을 받도록 설계.
 
 ---
 
@@ -228,13 +246,13 @@ app/
   _layout.tsx      — 루트 레이아웃 (인증 분기 + 알림 권한 요청)
 
 components/
-  feed-screen.tsx  — 피드 화면 (태그 필터 바, 스와이프, 다중선택, undo, 보관)
+  feed-screen.tsx  — 피드 화면 (로고 헤더, 인라인 검색, 태그 필터 바, 스와이프, 다중선택, undo, 보관)
   scrap-card.tsx   — 카드 컴포넌트 (읽음 상태, 리마인드 등)
   edit-scrap-sheet.tsx — 편집 모달 (하단 저장 버튼)
   archive-screen.tsx — 보관함 Modal
   remind-picker.tsx — 리마인드 4열 Picker
   undo-toast.tsx   — 삭제 undo 토스트
-  side-menu.tsx    — 사이드 메뉴
+  side-menu.tsx    — 좌측 사이드 메뉴 (로고 탭으로 진입)
   my-page.tsx      — 마이페이지
 
 lib/
@@ -251,6 +269,10 @@ lib/
 
 plugins/
   strip-push-entitlement.js — aps-environment 제거 config plugin
+
+assets/
+  images/
+    logo-wordmark.png — 앱 로고 워드마크 (헤더용, 883x327 투명 배경)
 
 types/
   scrap.ts         — Scrap, Bucket, ScrapStatus, SourcePlatform 타입
@@ -285,13 +307,25 @@ ios/
 17. ~~액션 바 / 태그 바 시각적 계층 분리~~ ✅
 18. ~~태그 시트에서 태그 추가(+) 기능~~ ✅
 19. ~~GitHub 원격 레포 연결 + push~~ ✅
+20. ~~Share Extension DatePicker 시인성 수정 (light mode 강제, 5분 단위, 과거 시간 차단)~~ ✅
+21. ~~메인 화면 헤더에 로고 이미지 적용 (텍스트 → PNG 워드마크)~~ ✅
+22. ~~헤더 구조 개편: 로고 탭 → 좌측 사이드 메뉴, 햄버거 → 검색 버튼~~ ✅
+23. ~~사이드 메뉴 우측→좌측 슬라이드 전환~~ ✅
+24. ~~인라인 검색 모드 구현 (제목/메모 검색 + 기간/분류/출처/태그 필터 조건 바)~~ ✅
+25. ~~Share Extension UI를 Add 화면과 미러링~~ ✅
+    - UIDatePicker(.wheels) → 4열 커스텀 UIPickerView
+    - URL/메모/bucket 스타일을 Add 화면과 통일 (흰 bg + border)
+    - 리마인드 프리셋 칩 스타일 통일
+    - 태그 칩 padding 통일
+    - 과거 시간 경고 + 저장 버튼 비활성화
 
 ## 다음 작업 (우선순위)
-1. **Share Extension 실기 테스트** — Xcode rebuild 후 공유 시트에서 전체 UI 확인 (태그 바, picker, 키보드)
-2. **Pending queue import 실기 테스트** — Share Extension → 본앱 foreground → 카드 생성 확인
-3. **알림 실기 테스트** — 리마인드 설정 → 시간 경과 후 알림 수신 확인
-4. Apple Developer 등록 → TestFlight 배포
-5. UX polish (카드 디자인, 애니메이션 등)
+1. **Share Extension 실기 테스트** — Xcode rebuild 후 전체 UI 확인 (4열 picker, 스타일 통일, 과거 시간 경고)
+2. **검색 UX 실기 테스트** — 검색 모드 진입/종료, 필터 조합, 결과 확인
+3. **Pending queue import 실기 테스트** — Share Extension → 본앱 foreground → 카드 생성 확인
+4. **알림 실기 테스트** — 리마인드 설정 → 시간 경과 후 알림 수신 확인
+5. Apple Developer 등록 → TestFlight 배포
+6. UX polish (카드 디자인, 애니메이션 등)
 
 ---
 

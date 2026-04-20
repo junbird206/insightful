@@ -60,7 +60,22 @@ CREATE POLICY "Users can manage own tag pool"
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
--- 3. 계정 탈퇴 RPC
+-- 3. remind_presets 테이블 (웹/모바일 공유)
+-- presets 는 [{ id, label, dayOffset, hour, minute }, ...] 형태의 jsonb 배열.
+CREATE TABLE remind_presets (
+  user_id    UUID REFERENCES auth.users(id) DEFAULT auth.uid() PRIMARY KEY,
+  presets    JSONB DEFAULT '[]'::jsonb NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+ALTER TABLE remind_presets ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage own remind presets"
+  ON remind_presets FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- 4. 계정 탈퇴 RPC
 -- 사용자의 데이터를 삭제한 뒤 auth.users에서 본인을 제거한다.
 CREATE OR REPLACE FUNCTION delete_own_account()
 RETURNS void
@@ -68,8 +83,9 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 BEGIN
-  DELETE FROM scraps    WHERE user_id = auth.uid();
-  DELETE FROM tag_pools WHERE user_id = auth.uid();
-  DELETE FROM auth.users WHERE id = auth.uid();
+  DELETE FROM scraps         WHERE user_id = auth.uid();
+  DELETE FROM tag_pools      WHERE user_id = auth.uid();
+  DELETE FROM remind_presets WHERE user_id = auth.uid();
+  DELETE FROM auth.users     WHERE id = auth.uid();
 END;
 $$;

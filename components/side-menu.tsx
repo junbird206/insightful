@@ -22,7 +22,7 @@ type Props = {
 
 export function SideMenu({ visible, scrapCount, onClose, onMyPage }: Props) {
   const { user, signOut } = useAuth()
-  const translateX = useRef(new Animated.Value(MENU_WIDTH)).current
+  const translateX = useRef(new Animated.Value(-MENU_WIDTH)).current
   const backdropOpacity = useRef(new Animated.Value(0)).current
 
   useEffect(() => {
@@ -42,7 +42,7 @@ export function SideMenu({ visible, scrapCount, onClose, onMyPage }: Props) {
     } else {
       Animated.parallel([
         Animated.timing(translateX, {
-          toValue: MENU_WIDTH,
+          toValue: -MENU_WIDTH,
           duration: 200,
           useNativeDriver: true,
         }),
@@ -149,12 +149,12 @@ const styles = StyleSheet.create({
   panel: {
     position: 'absolute',
     top: 0,
-    right: 0,
+    left: 0,
     bottom: 0,
     width: MENU_WIDTH,
     backgroundColor: '#FFFFFF',
     shadowColor: '#000',
-    shadowOffset: { width: -2, height: 0 },
+    shadowOffset: { width: 2, height: 0 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 10,

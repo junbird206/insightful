@@ -8,7 +8,8 @@ import 'react-native-reanimated'
 
 import { AuthProvider, useAuth } from '@/lib/auth'
 import { importPendingScraps } from '@/lib/import-pending'
-import { requestNotificationPermission } from '@/lib/notifications'
+import { requestNotificationPermission, syncScheduledReminders } from '@/lib/notifications'
+import { getAllScraps } from '@/lib/storage'
 
 export default function RootLayout() {
   return (
@@ -49,18 +50,30 @@ function AuthGate() {
   // Drain the iOS Share Extension pending queue on cold start and whenever
   // the app returns to foreground. Runs only after auth is known and the
   // user is logged in — saveScrap hits RLS-protected Supabase tables.
+  // Also reconcile local reminder notifications against DB-side remindAt
+  // so reminders set from the web client get scheduled locally.
   useEffect(() => {
     if (loading || !session) return
 
-    importPendingScraps().catch((err) =>
-      console.error('[app] importPendingScraps failed', err),
-    )
+    async function sync() {
+      try {
+        await importPendingScraps()
+      } catch (err) {
+        console.error('[app] importPendingScraps failed', err)
+      }
+      try {
+        const scraps = await getAllScraps()
+        await syncScheduledReminders(scraps)
+      } catch (err) {
+        console.error('[app] syncScheduledReminders failed', err)
+      }
+    }
+
+    sync()
 
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
-        importPendingScraps().catch((err) =>
-          console.error('[app] importPendingScraps failed', err),
-        )
+        sync()
       }
     })
     return () => sub.remove()

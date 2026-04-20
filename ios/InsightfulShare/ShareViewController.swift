@@ -36,7 +36,20 @@ class ShareViewController: UIViewController {
 
     // Remind section — picker + preview always in hierarchy, toggled via isHidden
     private var remindPreviewLabel: UILabel!
-    private var remindDatePicker: UIDatePicker!
+    private var remindPickerContainer: UIView!
+    private var remindPickerView: UIPickerView!
+    private var pastTimeWarningLabel: UILabel!
+
+    // Picker data
+    private var dateOptions: [(label: String, year: Int, month: Int, day: Int)] = []
+    private let ampmOptions = ["오전", "오후"]
+    private let hourOptions = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    private let minuteOptions = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]
+
+    private var pickerDateIdx = 0
+    private var pickerAmpmIdx = 1
+    private var pickerHour = 6
+    private var pickerMinute = 0
 
     // MARK: - Colors (matching Add screen)
 
@@ -57,6 +70,63 @@ class ShareViewController: UIViewController {
     private static let tonightHour = 18
     private static let tomorrowMorningHour = 8
 
+    // MARK: - Date option generation
+
+    private func generateDateOptions() {
+        let today = Calendar.current.startOfDay(for: Date())
+        dateOptions = (0..<30).map { i in
+            let d = Calendar.current.date(byAdding: .day, value: i, to: today)!
+            let label: String
+            if i == 0 { label = "오늘" }
+            else if i == 1 { label = "내일" }
+            else { label = "\(Calendar.current.component(.month, from: d))/\(Calendar.current.component(.day, from: d))" }
+            return (label: label,
+                    year: Calendar.current.component(.year, from: d),
+                    month: Calendar.current.component(.month, from: d) - 1,
+                    day: Calendar.current.component(.day, from: d))
+        }
+    }
+
+    private func pickerToDate() -> Date {
+        let opt = dateOptions[pickerDateIdx]
+        var hour24 = pickerHour
+        if pickerAmpmIdx == 0 { // 오전
+            if pickerHour == 12 { hour24 = 0 }
+        } else { // 오후
+            if pickerHour != 12 { hour24 = pickerHour + 12 }
+        }
+        var comps = DateComponents()
+        comps.year = opt.year
+        comps.month = opt.month + 1
+        comps.day = opt.day
+        comps.hour = hour24
+        comps.minute = pickerMinute
+        return Calendar.current.date(from: comps) ?? Date()
+    }
+
+    private func setPickerFromDate(_ date: Date) {
+        let cal = Calendar.current
+        // Find date index
+        let targetDay = cal.startOfDay(for: date)
+        let today = cal.startOfDay(for: Date())
+        let dayDiff = cal.dateComponents([.day], from: today, to: targetDay).day ?? 0
+        pickerDateIdx = max(0, min(dayDiff, dateOptions.count - 1))
+
+        let h = cal.component(.hour, from: date)
+        pickerAmpmIdx = h < 12 ? 0 : 1
+        pickerHour = h == 0 ? 12 : (h > 12 ? h - 12 : h)
+        pickerMinute = (cal.component(.minute, from: date) / 5) * 5
+
+        remindPickerView?.selectRow(pickerDateIdx, inComponent: 0, animated: false)
+        remindPickerView?.selectRow(pickerAmpmIdx, inComponent: 1, animated: false)
+        if let hourIdx = hourOptions.firstIndex(of: pickerHour) {
+            remindPickerView?.selectRow(hourIdx, inComponent: 2, animated: false)
+        }
+        if let minIdx = minuteOptions.firstIndex(of: pickerMinute) {
+            remindPickerView?.selectRow(minIdx, inComponent: 3, animated: false)
+        }
+    }
+
     // MARK: - Lifecycle
 
     override func viewDidLoad() {
@@ -64,6 +134,7 @@ class ShareViewController: UIViewController {
         view.backgroundColor = .clear
         view.isOpaque = false
         loadTagPool()
+        generateDateOptions()
         buildUI()
         extractURL()
 
@@ -302,8 +373,10 @@ class ShareViewController: UIViewController {
         wrapper.heightAnchor.constraint(equalToConstant: 48).isActive = true
 
         let box = UIView()
-        box.backgroundColor = fieldBg
-        box.layer.cornerRadius = 10
+        box.backgroundColor = .white
+        box.layer.cornerRadius = 8
+        box.layer.borderWidth = 1
+        box.layer.borderColor = borderColor.cgColor
         box.translatesAutoresizingMaskIntoConstraints = false
         wrapper.addSubview(box)
 
@@ -379,7 +452,7 @@ class ShareViewController: UIViewController {
 
     private func makeBucketSection() -> UIView {
         let wrapper = UIView()
-        wrapper.heightAnchor.constraint(equalToConstant: 46).isActive = true
+        wrapper.heightAnchor.constraint(equalToConstant: 48).isActive = true
 
         let row = UIStackView()
         row.axis = .horizontal
@@ -392,15 +465,18 @@ class ShareViewController: UIViewController {
             row.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 20),
             row.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -20),
             row.topAnchor.constraint(equalTo: wrapper.topAnchor),
-            row.heightAnchor.constraint(equalToConstant: 38),
+            row.heightAnchor.constraint(equalToConstant: 44),
         ])
 
         // Match Add screen labels
         for (i, title) in ["📖 To Read", "⚡ To Do"].enumerated() {
-            let btn = makeChipButton(title)
+            let btn = UIButton(type: .system)
+            btn.setTitle(title, for: .normal)
+            btn.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+            btn.clipsToBounds = true
             btn.tag = i
             btn.layer.cornerRadius = 8
-            btn.contentEdgeInsets = UIEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+            btn.contentEdgeInsets = UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
             btn.layer.borderWidth = 1
             btn.layer.borderColor = borderColor.cgColor
             btn.addTarget(self, action: #selector(bucketTapped(_:)), for: .touchUpInside)
@@ -470,7 +546,7 @@ class ShareViewController: UIViewController {
         btn.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
         btn.layer.cornerRadius = 16
         btn.clipsToBounds = true
-        btn.contentEdgeInsets = UIEdgeInsets(top: 6, left: 14, bottom: 6, right: 14)
+        btn.contentEdgeInsets = UIEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
         btn.backgroundColor = selected ? fg : chipBg
         btn.setTitleColor(selected ? .white : chipText, for: .normal)
         return btn
@@ -480,16 +556,18 @@ class ShareViewController: UIViewController {
 
     private func makeMemoSection() -> UIView {
         let wrapper = UIView()
-        wrapper.heightAnchor.constraint(equalToConstant: 50).isActive = true
+        wrapper.heightAnchor.constraint(equalToConstant: 60).isActive = true
 
         memoField.text = suggestedMemo()
         memoField.textColor = UIColor(white: 0.67, alpha: 1)  // gray placeholder-like
         memoField.font = .systemFont(ofSize: 15)
-        memoField.backgroundColor = fieldBg
-        memoField.layer.cornerRadius = 10
-        memoField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 14, height: 0))
+        memoField.backgroundColor = .white
+        memoField.layer.cornerRadius = 8
+        memoField.layer.borderWidth = 1
+        memoField.layer.borderColor = borderColor.cgColor
+        memoField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 16, height: 0))
         memoField.leftViewMode = .always
-        memoField.rightView = UIView(frame: CGRect(x: 0, y: 0, width: 14, height: 0))
+        memoField.rightView = UIView(frame: CGRect(x: 0, y: 0, width: 16, height: 0))
         memoField.rightViewMode = .always
         memoField.returnKeyType = .done
         memoField.delegate = self
@@ -500,7 +578,7 @@ class ShareViewController: UIViewController {
             memoField.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 20),
             memoField.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -20),
             memoField.topAnchor.constraint(equalTo: wrapper.topAnchor),
-            memoField.heightAnchor.constraint(equalToConstant: 42),
+            memoField.heightAnchor.constraint(equalToConstant: 48),
         ])
         return wrapper
     }
@@ -513,15 +591,32 @@ class ShareViewController: UIViewController {
         section.axis = .vertical
         section.spacing = 8
 
-        // 1. Preset row
+        // 1. Preset chips (horizontal scroll — matching Add screen remindRow)
+        let presetScroll = UIScrollView()
+        presetScroll.showsHorizontalScrollIndicator = false
+        presetScroll.translatesAutoresizingMaskIntoConstraints = false
+
         let presetRow = UIStackView()
         presetRow.axis = .horizontal
         presetRow.spacing = 8
-        presetRow.distribution = .fillEqually
-        presetRow.heightAnchor.constraint(equalToConstant: 38).isActive = true
+        presetRow.translatesAutoresizingMaskIntoConstraints = false
+        presetScroll.addSubview(presetRow)
+
+        NSLayoutConstraint.activate([
+            presetRow.leadingAnchor.constraint(equalTo: presetScroll.contentLayoutGuide.leadingAnchor),
+            presetRow.trailingAnchor.constraint(equalTo: presetScroll.contentLayoutGuide.trailingAnchor),
+            presetRow.topAnchor.constraint(equalTo: presetScroll.contentLayoutGuide.topAnchor),
+            presetRow.bottomAnchor.constraint(equalTo: presetScroll.contentLayoutGuide.bottomAnchor),
+            presetRow.heightAnchor.constraint(equalTo: presetScroll.frameLayoutGuide.heightAnchor),
+        ])
 
         for (i, title) in ["없음", "오늘 저녁", "내일 아침"].enumerated() {
-            let btn = makeChipButton(title)
+            let btn = UIButton(type: .system)
+            btn.setTitle(title, for: .normal)
+            btn.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
+            btn.layer.cornerRadius = 16
+            btn.clipsToBounds = true
+            btn.contentEdgeInsets = UIEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
             btn.tag = i
             btn.addTarget(self, action: #selector(remindTapped(_:)), for: .touchUpInside)
             presetRow.addArrangedSubview(btn)
@@ -530,13 +625,13 @@ class ShareViewController: UIViewController {
         updateRemindUI()
 
         let presetWrapper = UIView()
-        presetRow.translatesAutoresizingMaskIntoConstraints = false
-        presetWrapper.addSubview(presetRow)
+        presetWrapper.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        presetWrapper.addSubview(presetScroll)
         NSLayoutConstraint.activate([
-            presetRow.leadingAnchor.constraint(equalTo: presetWrapper.leadingAnchor, constant: 20),
-            presetRow.trailingAnchor.constraint(equalTo: presetWrapper.trailingAnchor, constant: -20),
-            presetRow.topAnchor.constraint(equalTo: presetWrapper.topAnchor),
-            presetRow.bottomAnchor.constraint(equalTo: presetWrapper.bottomAnchor),
+            presetScroll.leadingAnchor.constraint(equalTo: presetWrapper.leadingAnchor, constant: 20),
+            presetScroll.trailingAnchor.constraint(equalTo: presetWrapper.trailingAnchor, constant: -20),
+            presetScroll.topAnchor.constraint(equalTo: presetWrapper.topAnchor),
+            presetScroll.bottomAnchor.constraint(equalTo: presetWrapper.bottomAnchor),
         ])
         section.addArrangedSubview(presetWrapper)
 
@@ -558,42 +653,63 @@ class ShareViewController: UIViewController {
         ])
         section.addArrangedSubview(previewWrapper)
 
-        // 3. Date picker (wheels) — hidden by default
-        let picker = UIDatePicker()
-        picker.datePickerMode = .dateAndTime
-        picker.preferredDatePickerStyle = .wheels
-        picker.locale = Locale(identifier: "ko_KR")
-        picker.minimumDate = Date()
-        picker.addTarget(self, action: #selector(datePickerChanged(_:)), for: .valueChanged)
-        picker.isHidden = true
-        remindDatePicker = picker
+        // 3. Custom 4-column picker (matching Add screen RemindPicker)
+        let container = UIView()
+        container.backgroundColor = UIColor(red: 0.969, green: 0.969, blue: 0.969, alpha: 1) // #F7F7F7
+        container.layer.cornerRadius = 12
+        container.clipsToBounds = true
+        container.isHidden = true
+        container.translatesAutoresizingMaskIntoConstraints = false
+        remindPickerContainer = container
 
-        section.addArrangedSubview(picker)
+        let pickerView = UIPickerView()
+        pickerView.dataSource = self
+        pickerView.delegate = self
+        pickerView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(pickerView)
+        remindPickerView = pickerView
+
+        NSLayoutConstraint.activate([
+            pickerView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            pickerView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            pickerView.topAnchor.constraint(equalTo: container.topAnchor),
+            pickerView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+
+        let pickerWrapper = UIView()
+        pickerWrapper.addSubview(container)
+        NSLayoutConstraint.activate([
+            container.leadingAnchor.constraint(equalTo: pickerWrapper.leadingAnchor, constant: 20),
+            container.trailingAnchor.constraint(equalTo: pickerWrapper.trailingAnchor, constant: -20),
+            container.topAnchor.constraint(equalTo: pickerWrapper.topAnchor),
+            container.bottomAnchor.constraint(equalTo: pickerWrapper.bottomAnchor),
+            container.heightAnchor.constraint(equalToConstant: 180),
+        ])
+        section.addArrangedSubview(pickerWrapper)
 
         return section
-    }
-
-    // MARK: - Common chip button
-
-    private func makeChipButton(_ title: String) -> UIButton {
-        let btn = UIButton(type: .system)
-        btn.setTitle(title, for: .normal)
-        btn.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
-        btn.layer.cornerRadius = 19
-        btn.clipsToBounds = true
-        btn.contentEdgeInsets = UIEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
-        return btn
     }
 
     // MARK: - Save button
 
     private func makeSaveButton() -> UIView {
         let wrapper = UIView()
-        wrapper.heightAnchor.constraint(equalToConstant: 56).isActive = true
+        wrapper.heightAnchor.constraint(equalToConstant: 76).isActive = true
+
+        // Warning label above save button
+        let warning = UILabel()
+        warning.text = "현재 시각 이후로 설정해주세요"
+        warning.font = .systemFont(ofSize: 12, weight: .regular)
+        warning.textColor = UIColor(red: 0.863, green: 0.149, blue: 0.149, alpha: 1) // #DC2626
+        warning.textAlignment = .left
+        warning.isHidden = true
+        warning.translatesAutoresizingMaskIntoConstraints = false
+        wrapper.addSubview(warning)
+        pastTimeWarningLabel = warning
 
         let btn = UIButton(type: .system)
-        btn.setTitle("저장하기", for: .normal)
-        btn.titleLabel?.font = .systemFont(ofSize: 16, weight: .bold)
+        btn.setTitle("저장", for: .normal)
+        btn.titleLabel?.font = .systemFont(ofSize: 15, weight: .bold)
         btn.setTitleColor(.white, for: .normal)
         btn.backgroundColor = fg
         btn.layer.cornerRadius = 8
@@ -603,9 +719,13 @@ class ShareViewController: UIViewController {
         saveBtnRef = btn
 
         NSLayoutConstraint.activate([
+            warning.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 20),
+            warning.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -20),
+            warning.topAnchor.constraint(equalTo: wrapper.topAnchor),
+
             btn.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 20),
             btn.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -20),
-            btn.topAnchor.constraint(equalTo: wrapper.topAnchor),
+            btn.topAnchor.constraint(equalTo: warning.bottomAnchor, constant: 4),
             btn.heightAnchor.constraint(equalToConstant: 50),
         ])
         return wrapper
@@ -742,30 +862,47 @@ class ShareViewController: UIViewController {
             var date = cal.date(bySettingHour: Self.tonightHour, minute: 0, second: 0, of: now) ?? now
             if date <= now { date = cal.date(byAdding: .day, value: 1, to: date) ?? date }
             remindDate = date
-            remindDatePicker.date = date
-            remindDatePicker.isHidden = false
+            setPickerFromDate(date)
+            remindPickerContainer.isHidden = false
         case 2:
             // 내일 아침 — 08:00 (matching Add screen preset)
             let tomorrow = cal.date(byAdding: .day, value: 1, to: now) ?? now
             let date = cal.date(bySettingHour: Self.tomorrowMorningHour, minute: 0, second: 0, of: tomorrow) ?? tomorrow
             remindDate = date
-            remindDatePicker.date = date
-            remindDatePicker.isHidden = false
+            setPickerFromDate(date)
+            remindPickerContainer.isHidden = false
         default:
             // 없음
             remindDate = nil
-            remindDatePicker.isHidden = true
+            remindPickerContainer.isHidden = true
         }
 
         updateRemindPreview()
+        validateRemindTime()
     }
 
-    @objc private func datePickerChanged(_ sender: UIDatePicker) {
-        remindDate = sender.date
+    private func pickerDidChange() {
+        let date = pickerToDate()
+        remindDate = date
         // When user manually adjusts the wheel, deselect all presets
         selectedRemind = -1
         updateRemindUI()
         updateRemindPreview()
+        validateRemindTime()
+    }
+
+    private func validateRemindTime() {
+        guard let date = remindDate, !(remindPickerContainer?.isHidden ?? true) else {
+            // No remind set or picker hidden — valid
+            pastTimeWarningLabel?.isHidden = true
+            saveBtnRef?.isEnabled = true
+            saveBtnRef?.alpha = 1.0
+            return
+        }
+        let isPast = date < Date()
+        pastTimeWarningLabel?.isHidden = !isPast
+        saveBtnRef?.isEnabled = !isPast
+        saveBtnRef?.alpha = isPast ? 0.4 : 1.0
     }
 
     @objc private func closeTapped() {
@@ -840,5 +977,58 @@ extension ShareViewController: UITextFieldDelegate {
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         textField.resignFirstResponder()
         return true
+    }
+}
+
+// MARK: - UIPickerViewDataSource & Delegate
+
+extension ShareViewController: UIPickerViewDataSource, UIPickerViewDelegate {
+    func numberOfComponents(in pickerView: UIPickerView) -> Int { 4 }
+
+    func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
+        switch component {
+        case 0: return dateOptions.count
+        case 1: return ampmOptions.count
+        case 2: return hourOptions.count
+        case 3: return minuteOptions.count
+        default: return 0
+        }
+    }
+
+    func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? {
+        switch component {
+        case 0: return dateOptions[row].label
+        case 1: return ampmOptions[row]
+        case 2: return "\(hourOptions[row])"
+        case 3: return String(format: "%02d", minuteOptions[row])
+        default: return nil
+        }
+    }
+
+    func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
+        switch component {
+        case 0: pickerDateIdx = row
+        case 1: pickerAmpmIdx = row
+        case 2: pickerHour = hourOptions[row]
+        case 3: pickerMinute = minuteOptions[row]
+        default: break
+        }
+        pickerDidChange()
+    }
+
+    func pickerView(_ pickerView: UIPickerView, viewForRow row: Int, forComponent component: Int, reusing view: UIView?) -> UIView {
+        let label = (view as? UILabel) ?? UILabel()
+        label.textAlignment = .center
+        label.font = .systemFont(ofSize: 16, weight: .medium)
+        label.textColor = fg
+
+        switch component {
+        case 0: label.text = dateOptions[row].label
+        case 1: label.text = ampmOptions[row]
+        case 2: label.text = "\(hourOptions[row])"
+        case 3: label.text = String(format: "%02d", minuteOptions[row])
+        default: break
+        }
+        return label
     }
 }

@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Animated, FlatList, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { Alert, Animated, FlatList, Image, Modal, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import Swipeable from 'react-native-gesture-handler/Swipeable'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
@@ -50,6 +50,15 @@ export function FeedScreen({ filter }: Props) {
   const [tagPool, setTagPool] = useState<string[]>([])
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [tagSheetOpen, setTagSheetOpen] = useState(false)
+
+  // Search
+  const [searchMode, setSearchMode] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const searchInputRef = useRef<TextInput>(null)
+  const [searchPeriod, setSearchPeriod] = useState<'all' | 'today' | 'week' | 'month'>('all')
+  const [searchBucket, setSearchBucket] = useState<'all' | 'read' | 'do'>('all')
+  const [searchTags, setSearchTags] = useState<string[]>([])
+  const [searchSource, setSearchSource] = useState<string>('all')
 
   // Edit sheet
   const [editing, setEditing] = useState<Scrap | null>(null)
@@ -241,26 +250,113 @@ export function FeedScreen({ filter }: Props) {
     )
   }
 
+  function enterSearchMode() {
+    setSearchMode(true)
+    setSearchQuery('')
+    setSearchPeriod('all')
+    setSearchBucket('all')
+    setSearchTags([])
+    setSearchSource('all')
+    setTimeout(() => searchInputRef.current?.focus(), 100)
+  }
+
+  function exitSearchMode() {
+    setSearchMode(false)
+    setSearchQuery('')
+    setSearchPeriod('all')
+    setSearchBucket('all')
+    setSearchTags([])
+    setSearchSource('all')
+  }
+
+  function toggleSearchTag(tag: string) {
+    setSearchTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+    )
+  }
+
   let displayed = filter === 'recent'
     ? scraps
     : scraps.filter((s) => s.bucket === filter)
 
-  if (starredOnly) {
-    displayed = displayed.filter((s) => s.starred)
-  }
-
-  // Intersection filter: show only scraps that have ALL selected tags
-  if (selectedTags.length > 0) {
-    displayed = displayed.filter((s) =>
-      selectedTags.every((tag) => s.tags?.includes(tag)),
-    )
+  if (searchMode) {
+    // Text search: title + memo only, minimum 2 chars
+    const q = searchQuery.trim().toLowerCase()
+    if (q.length >= 2) {
+      displayed = displayed.filter((s) => {
+        const title = s.rawTitle?.toLowerCase() ?? ''
+        const memo = s.memo?.toLowerCase() ?? ''
+        return title.includes(q) || memo.includes(q)
+      })
+    }
+    // Filter: bucket
+    if (searchBucket !== 'all') {
+      displayed = displayed.filter((s) => s.bucket === searchBucket)
+    }
+    // Filter: period
+    if (searchPeriod !== 'all') {
+      const now = new Date()
+      let cutoff: Date
+      if (searchPeriod === 'today') {
+        cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      } else if (searchPeriod === 'week') {
+        cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      } else {
+        cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+      }
+      displayed = displayed.filter((s) => new Date(s.createdAt) >= cutoff)
+    }
+    // Filter: source platform
+    if (searchSource !== 'all') {
+      displayed = displayed.filter((s) => s.sourcePlatform === searchSource)
+    }
+    // Filter: tags (intersection)
+    if (searchTags.length > 0) {
+      displayed = displayed.filter((s) =>
+        searchTags.every((tag) => s.tags?.includes(tag)),
+      )
+    }
+  } else {
+    if (starredOnly) {
+      displayed = displayed.filter((s) => s.starred)
+    }
+    if (selectedTags.length > 0) {
+      displayed = displayed.filter((s) =>
+        selectedTags.every((tag) => s.tags?.includes(tag)),
+      )
+    }
   }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Title row */}
       <View style={styles.titleRow}>
-        {selectMode ? (
+        {searchMode ? (
+          <>
+            <TouchableOpacity
+              onPress={exitSearchMode}
+              activeOpacity={0.6}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.searchBackText}>←</Text>
+            </TouchableOpacity>
+            <TextInput
+              ref={searchInputRef}
+              style={styles.searchInput}
+              placeholder="제목, 메모, 태그, URL 검색..."
+              placeholderTextColor="#AAAAAA"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              returnKeyType="search"
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} activeOpacity={0.6}>
+                <Text style={styles.searchClearText}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        ) : selectMode ? (
           <>
             <Text style={styles.selectTitle}>{selectedIds.size}개 선택됨</Text>
             <TouchableOpacity onPress={exitSelectMode} activeOpacity={0.7}>
@@ -269,7 +365,13 @@ export function FeedScreen({ filter }: Props) {
           </>
         ) : (
           <>
-            <Text style={styles.appTitle}>insightful</Text>
+            <TouchableOpacity onPress={() => setMenuOpen(true)} activeOpacity={0.7}>
+              <Image
+                source={require('@/assets/images/logo-wordmark.png')}
+                style={styles.appLogo}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
             <View style={styles.titleRight}>
               <TouchableOpacity
                 onPress={() => setStarredOnly((v) => !v)}
@@ -300,20 +402,89 @@ export function FeedScreen({ filter }: Props) {
                 <Text style={styles.actionText}>보관함</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => setMenuOpen(true)}
+                onPress={enterSearchMode}
                 activeOpacity={0.6}
-                style={styles.menuBtn}
+                style={styles.searchBtn}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Text style={styles.menuBtnText}>☰</Text>
+                <Text style={styles.searchBtnText}>🔍</Text>
               </TouchableOpacity>
             </View>
           </>
         )}
       </View>
 
-      {/* Tag filter bar */}
-      {tagPool.length > 0 && (
+      {/* Search filter bar */}
+      {searchMode && (
+        <View style={styles.searchFilterWrap}>
+          {/* Row 1: Period + Bucket */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.searchFilterRow}>
+            {([['all', '전체'], ['today', '오늘'], ['week', '이번 주'], ['month', '이번 달']] as const).map(([key, label]) => (
+              <TouchableOpacity
+                key={key}
+                style={[styles.filterChip, searchPeriod === key && styles.filterChipActive]}
+                onPress={() => setSearchPeriod(key)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.filterChipText, searchPeriod === key && styles.filterChipTextActive]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <View style={styles.filterDivider} />
+            {([['all', '전체'], ['read', 'To Read'], ['do', 'To Do']] as const).map(([key, label]) => (
+              <TouchableOpacity
+                key={key}
+                style={[styles.filterChip, searchBucket === key && styles.filterChipActive]}
+                onPress={() => setSearchBucket(key)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.filterChipText, searchBucket === key && styles.filterChipTextActive]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          {/* Row 2: Source + Tags */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.searchFilterRow}>
+            {([['all', '모든 출처'], ['instagram', 'Instagram'], ['twitter', 'Twitter'], ['youtube', 'YouTube'], ['web', 'Web']] as const).map(([key, label]) => (
+              <TouchableOpacity
+                key={key}
+                style={[styles.filterChip, searchSource === key && styles.filterChipActive]}
+                onPress={() => setSearchSource(key)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.filterChipText, searchSource === key && styles.filterChipTextActive]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            {tagPool.length > 0 && (
+              <>
+                <View style={styles.filterDivider} />
+                {tagPool.map((tag) => {
+                  const active = searchTags.includes(tag)
+                  return (
+                    <TouchableOpacity
+                      key={tag}
+                      style={[styles.filterChip, active && styles.filterChipActive]}
+                      onPress={() => toggleSearchTag(tag)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                        #{tag}
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                })}
+              </>
+            )}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Tag filter bar — hidden during search */}
+      {!searchMode && tagPool.length > 0 && (
         <View style={styles.tagBarWrap}>
           <ScrollView
             horizontal
@@ -648,6 +819,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   appTitle: { fontSize: 28, fontWeight: '700', color: '#111111', letterSpacing: -0.5 },
+  appLogo: { height: 30, width: 30 * (883 / 327) },
   titleRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 
   selectTitle: { fontSize: 17, fontWeight: '700', color: '#111111' },
@@ -658,7 +830,7 @@ const styles = StyleSheet.create({
   actionTextActive: { color: '#D97706' },
   actionTextDisabled: { color: '#D5D5D5' },
   actionDivider: { fontSize: 12, color: '#DDDDDD' },
-  menuBtn: {
+  searchBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
@@ -667,7 +839,47 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginLeft: 2,
   },
-  menuBtnText: { fontSize: 16, color: '#555555', lineHeight: 18 },
+  searchBtnText: { fontSize: 15 },
+
+  // Search mode header
+  searchBackText: { fontSize: 22, color: '#555555', marginRight: 8 },
+  searchInput: {
+    flex: 1,
+    height: 36,
+    backgroundColor: '#F0F0F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    fontSize: 15,
+    color: '#111111',
+  },
+  searchClearText: { fontSize: 16, color: '#AAAAAA', marginLeft: 10 },
+
+  // Search filter bar
+  searchFilterWrap: {
+    paddingBottom: 6,
+    gap: 6,
+  },
+  searchFilterRow: {
+    paddingHorizontal: 20,
+    gap: 6,
+    alignItems: 'center',
+  },
+  filterChip: {
+    height: 28,
+    paddingHorizontal: 10,
+    justifyContent: 'center',
+    borderRadius: 14,
+    backgroundColor: '#F0F0F0',
+  },
+  filterChipActive: { backgroundColor: '#111111' },
+  filterChipText: { fontSize: 12, fontWeight: '500', color: '#999999' },
+  filterChipTextActive: { color: '#FFFFFF' },
+  filterDivider: {
+    width: 1,
+    height: 16,
+    backgroundColor: '#E0E0E0',
+    marginHorizontal: 4,
+  },
 
   // Tag bar — pill filter chips with overlay `...`
   tagBarWrap: {
