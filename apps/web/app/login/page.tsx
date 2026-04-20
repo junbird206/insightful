@@ -65,7 +65,11 @@ export default function LoginPage() {
 
         <div className="hero-block">
           <p className="eyebrow">Your knowledge, retrievable.</p>
-          <h1>흩어진 링크를, 다시 꺼내 쓰는 지식으로.</h1>
+          <h1>
+            흩어진 링크를,
+            <br />
+            다시 꺼내 쓰는 지식으로.
+          </h1>
           <p className="auth-copy">
             어디서든 저장한 아티클과 생각을 한 곳에 모으고, 검색하고, 정리하세요. 모바일과 웹이
             하나의 계정으로 이어집니다.

@@ -363,6 +363,25 @@ code {
   background: var(--surface);
   border: 1px solid var(--line);
   box-shadow: var(--shadow-sm);
+  transition:
+    transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 200ms ease,
+    border-color 200ms ease;
+  will-change: transform;
+}
+
+.feature-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 14px 28px -14px rgba(15, 23, 42, 0.22);
+  border-color: var(--key-200);
+}
+
+.feature-card:hover .feature-icon {
+  transform: scale(1.12) rotate(-4deg);
+}
+
+.feature-card .feature-icon {
+  transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .feature-card .feature-icon {
@@ -401,6 +420,25 @@ code {
   border-radius: var(--radius-lg);
   background: var(--surface);
   border: 1px solid var(--line);
+  transition:
+    transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 200ms ease,
+    border-color 200ms ease;
+  will-change: transform;
+}
+
+.landing-steps li:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px -14px rgba(15, 23, 42, 0.2);
+  border-color: var(--key-200);
+}
+
+.landing-steps li:hover .step-number {
+  transform: scale(1.1);
+}
+
+.step-number {
+  transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .step-number {
@@ -449,6 +487,17 @@ code {
   font-size: 0.95rem;
   line-height: 1.5;
   color: var(--text-strong);
+  transition:
+    transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 200ms ease,
+    border-color 200ms ease;
+  will-change: transform;
+}
+
+.landing-list li:hover {
+  transform: translateX(6px);
+  box-shadow: 0 10px 20px -14px rgba(15, 23, 42, 0.18);
+  border-color: var(--key-200);
 }
 
 .landing-list li::before {
