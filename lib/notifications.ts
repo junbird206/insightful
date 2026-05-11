@@ -5,18 +5,23 @@ import { getDailyReminderConfig, type DailyReminderConfig } from './daily-remind
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-})
+const IS_NATIVE = Platform.OS === 'ios' || Platform.OS === 'android'
+
+if (IS_NATIVE) {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  })
+}
 
 // ─── Permission ──────────────────────────────────────────────────────────────
 
 export async function requestNotificationPermission(): Promise<boolean> {
+  if (!IS_NATIVE) return false
   if (Platform.OS !== 'ios') return true
 
   const { status: existing } = await Notifications.getPermissionsAsync()
@@ -37,6 +42,7 @@ export async function scheduleReminder(
   remindAt: string,
   title?: string,
 ): Promise<void> {
+  if (!IS_NATIVE) return
   const triggerDate = new Date(remindAt)
   if (triggerDate.getTime() <= Date.now()) return // past — skip
 
@@ -61,6 +67,7 @@ export async function scheduleReminder(
  * Cancel a previously scheduled notification for a scrap.
  */
 export async function cancelReminder(scrapId: string): Promise<void> {
+  if (!IS_NATIVE) return
   try {
     await Notifications.cancelScheduledNotificationAsync(scrapId)
   } catch {
@@ -103,6 +110,7 @@ export async function syncScheduledReminders(
   scraps: SyncScrap[],
   nickname?: string | null,
 ): Promise<void> {
+  if (!IS_NATIVE) return
   try {
     await Notifications.cancelAllScheduledNotificationsAsync()
   } catch {
@@ -141,6 +149,7 @@ export async function syncScheduledReminders(
  * nickname updated, etc.) so the next-day notification reflects them.
  */
 export async function refreshAllSchedules(nickname?: string | null): Promise<void> {
+  if (!IS_NATIVE) return
   try {
     const { getAllScraps } = await import('./storage')
     const scraps = await getAllScraps()
