@@ -18,9 +18,11 @@ type Props = {
   scrapCount: number
   onClose: () => void
   onMyPage: () => void
+  onArchive: () => void
+  onDailyReminder: () => void
 }
 
-export function SideMenu({ visible, scrapCount, onClose, onMyPage }: Props) {
+export function SideMenu({ visible, scrapCount, onClose, onMyPage, onArchive, onDailyReminder }: Props) {
   const { user, signOut } = useAuth()
   const translateX = useRef(new Animated.Value(-MENU_WIDTH)).current
   const backdropOpacity = useRef(new Animated.Value(0)).current
@@ -96,6 +98,8 @@ export function SideMenu({ visible, scrapCount, onClose, onMyPage }: Props) {
         {/* Menu items */}
         <View style={styles.menuItems}>
           <MenuItem label="마이페이지" onPress={onMyPage} />
+          <MenuItem label="보관함" onPress={onArchive} />
+          <MenuItem label="데일리 알람 설정" onPress={onDailyReminder} />
         </View>
 
         {/* Bottom: usage + logout */}

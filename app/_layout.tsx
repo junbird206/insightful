@@ -63,7 +63,9 @@ function AuthGate() {
       }
       try {
         const scraps = await getAllScraps()
-        await syncScheduledReminders(scraps)
+        const nicknameRaw = session?.user?.user_metadata?.nickname
+        const nickname = typeof nicknameRaw === 'string' && nicknameRaw.trim() ? nicknameRaw.trim() : null
+        await syncScheduledReminders(scraps, nickname)
       } catch (err) {
         console.error('[app] syncScheduledReminders failed', err)
       }

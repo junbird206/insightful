@@ -31,18 +31,23 @@ const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const MINUTES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]
 
 export function MyPage({ visible, scrapCount, onClose }: Props) {
-  const { user, updatePassword, deleteAccount } = useAuth()
+  const { user, nickname, updateNickname, updatePassword, deleteAccount } = useAuth()
   const [presets, setPresets] = useState<RemindPresetConfig[]>([])
   const [newPassword, setNewPassword] = useState('')
   const [passwordMsg, setPasswordMsg] = useState<{ text: string; error: boolean } | null>(null)
+  const [nicknameInput, setNicknameInput] = useState('')
+  const [nicknameMsg, setNicknameMsg] = useState<{ text: string; error: boolean } | null>(null)
+  const [nicknameSaving, setNicknameSaving] = useState(false)
 
   useEffect(() => {
     if (visible) {
       getRemindPresets().then(setPresets)
       setNewPassword('')
       setPasswordMsg(null)
+      setNicknameInput(nickname ?? '')
+      setNicknameMsg(null)
     }
-  }, [visible])
+  }, [visible, nickname])
 
   async function persist(updated: RemindPresetConfig[]) {
     setPresets(updated)
@@ -68,6 +73,26 @@ export function MyPage({ visible, scrapCount, onClose }: Props) {
   const provider = user?.app_metadata?.provider
   const isEmailUser = provider !== 'google'
   const providerLabel = provider === 'google' ? 'Google' : '이메일'
+
+  async function handleSaveNickname() {
+    const trimmed = nicknameInput.trim()
+    if (!trimmed) {
+      setNicknameMsg({ text: '닉네임을 입력해주세요.', error: true })
+      return
+    }
+    if (trimmed === (nickname ?? '')) {
+      setNicknameMsg({ text: '변경된 내용이 없습니다.', error: true })
+      return
+    }
+    setNicknameSaving(true)
+    const err = await updateNickname(trimmed)
+    setNicknameSaving(false)
+    if (err) {
+      setNicknameMsg({ text: err, error: true })
+    } else {
+      setNicknameMsg({ text: '닉네임이 변경되었습니다.', error: false })
+    }
+  }
 
   async function handleChangePassword() {
     if (newPassword.length < 6) {
@@ -122,6 +147,43 @@ export function MyPage({ visible, scrapCount, onClose }: Props) {
               <InfoRow label="이메일" value={user?.email ?? '-'} />
               <View style={styles.sep} />
               <InfoRow label="로그인 방식" value={providerLabel} />
+            </View>
+          </View>
+
+          {/* ── Nickname ───────────────────────────────────────────── */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>닉네임</Text>
+            <Text style={styles.sectionDesc}>
+              알림 메시지에 표시되는 이름이에요 (최대 20자)
+            </Text>
+            <View style={styles.card}>
+              <Text style={styles.cardLabel}>
+                {nickname ? `현재 닉네임: ${nickname}` : '닉네임이 설정되지 않았습니다'}
+              </Text>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="닉네임 입력"
+                placeholderTextColor="#CCC"
+                value={nicknameInput}
+                onChangeText={(t) => { setNicknameInput(t); setNicknameMsg(null) }}
+                maxLength={20}
+                autoCapitalize="none"
+              />
+              {nicknameMsg && (
+                <Text style={[styles.passwordMsg, nicknameMsg.error && styles.passwordMsgError]}>
+                  {nicknameMsg.text}
+                </Text>
+              )}
+              <TouchableOpacity
+                style={[styles.passwordBtn, (!nicknameInput.trim() || nicknameSaving) && styles.passwordBtnDisabled]}
+                onPress={handleSaveNickname}
+                disabled={!nicknameInput.trim() || nicknameSaving}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.passwordBtnText}>
+                  {nicknameSaving ? '저장 중...' : '저장하기'}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
 

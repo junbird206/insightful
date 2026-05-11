@@ -10,13 +10,22 @@ import type { Session, User } from '@supabase/supabase-js'
 type AuthContextType = {
   session: Session | null
   user: User | null
+  nickname: string | null
   loading: boolean
   signIn: (email: string, password: string) => Promise<string | null>
   signUp: (email: string, password: string) => Promise<string | null>
   signOut: () => Promise<void>
   signInWithGoogle: () => Promise<string | null>
   updatePassword: (newPassword: string) => Promise<string | null>
+  updateNickname: (nickname: string) => Promise<string | null>
   deleteAccount: () => Promise<string | null>
+}
+
+export function getNickname(user: User | null): string | null {
+  const value = user?.user_metadata?.nickname
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -73,6 +82,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return error?.message ?? null
   }
 
+  // ─── Nickname update ─────────────────────────────────────────────────────
+  // Stored at auth.users.user_metadata.nickname — same location used by the
+  // web client so changes round-trip automatically.
+
+  async function updateNickname(nickname: string): Promise<string | null> {
+    const trimmed = nickname.trim()
+    if (!trimmed) return '닉네임을 입력해주세요.'
+    if (trimmed.length > 20) return '닉네임은 20자 이내로 입력해주세요.'
+
+    const { data, error } = await supabase.auth.updateUser({
+      data: { nickname: trimmed },
+    })
+    if (error) return error.message
+    if (data.user) {
+      setSession((current) => (current ? { ...current, user: data.user! } : current))
+    }
+    return null
+  }
+
   // ─── Account deletion ──────────────────────────────────────────────────
 
   async function deleteAccount(): Promise<string | null> {
@@ -127,12 +155,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         session,
         user: session?.user ?? null,
+        nickname: getNickname(session?.user ?? null),
         loading,
         signIn,
         signUp,
         signOut,
         signInWithGoogle,
         updatePassword,
+        updateNickname,
         deleteAccount,
       }}
     >

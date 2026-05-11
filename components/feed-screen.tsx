@@ -5,6 +5,7 @@ import Swipeable from 'react-native-gesture-handler/Swipeable'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { ArchiveScreen } from '@/components/archive-screen'
+import { DailyReminderSettings } from '@/components/daily-reminder-settings'
 import { EditScrapSheet } from '@/components/edit-scrap-sheet'
 import { MyPage } from '@/components/my-page'
 import { ScrapCard } from '@/components/scrap-card'
@@ -34,9 +35,11 @@ const EMPTY: Record<FeedFilter, string> = {
 export function FeedScreen({ filter }: Props) {
   const [scraps, setScraps] = useState<Scrap[]>([])
   const [starredOnly, setStarredOnly] = useState(false)
+  const [unopenedOnly, setUnopenedOnly] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [myPageOpen, setMyPageOpen] = useState(false)
   const [archiveOpen, setArchiveOpen] = useState(false)
+  const [dailyReminderOpen, setDailyReminderOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [undo, setUndo] = useState<UndoState>(null)
   const [archiveToast, setArchiveToast] = useState(false)
@@ -320,6 +323,9 @@ export function FeedScreen({ filter }: Props) {
     if (starredOnly) {
       displayed = displayed.filter((s) => s.starred)
     }
+    if (unopenedOnly) {
+      displayed = displayed.filter((s) => s.openedAt == null)
+    }
     if (selectedTags.length > 0) {
       displayed = displayed.filter((s) =>
         selectedTags.every((tag) => s.tags?.includes(tag)),
@@ -384,6 +390,16 @@ export function FeedScreen({ filter }: Props) {
               </TouchableOpacity>
               <Text style={styles.actionDivider}>|</Text>
               <TouchableOpacity
+                onPress={() => setUnopenedOnly((v) => !v)}
+                activeOpacity={0.5}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+              >
+                <Text style={[styles.actionText, unopenedOnly && styles.actionTextUnopened]}>
+                  ● 미열람
+                </Text>
+              </TouchableOpacity>
+              <Text style={styles.actionDivider}>|</Text>
+              <TouchableOpacity
                 onPress={enterSelectMode}
                 activeOpacity={0.5}
                 disabled={displayed.length === 0}
@@ -392,14 +408,6 @@ export function FeedScreen({ filter }: Props) {
                 <Text style={[styles.actionText, displayed.length === 0 && styles.actionTextDisabled]}>
                   선택
                 </Text>
-              </TouchableOpacity>
-              <Text style={styles.actionDivider}>|</Text>
-              <TouchableOpacity
-                onPress={() => setArchiveOpen(true)}
-                activeOpacity={0.5}
-                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-              >
-                <Text style={styles.actionText}>보관함</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={enterSearchMode}
@@ -553,7 +561,11 @@ export function FeedScreen({ filter }: Props) {
         ListEmptyComponent={
           <View style={styles.empty}>
             <Text style={styles.emptyText}>
-              {starredOnly ? '★ 표시한 항목이 없습니다.' : EMPTY[filter]}
+              {starredOnly
+                ? '★ 표시한 항목이 없습니다.'
+                : unopenedOnly
+                  ? '미열람 항목이 없습니다.'
+                  : EMPTY[filter]}
             </Text>
           </View>
         }
@@ -612,6 +624,8 @@ export function FeedScreen({ filter }: Props) {
         scrapCount={scraps.length}
         onClose={() => setMenuOpen(false)}
         onMyPage={() => { setMenuOpen(false); setMyPageOpen(true) }}
+        onArchive={() => { setMenuOpen(false); setArchiveOpen(true) }}
+        onDailyReminder={() => { setMenuOpen(false); setDailyReminderOpen(true) }}
       />
 
       {/* My Page */}
@@ -619,6 +633,12 @@ export function FeedScreen({ filter }: Props) {
 
       {/* Archive Screen */}
       <ArchiveScreen visible={archiveOpen} onClose={() => setArchiveOpen(false)} />
+
+      {/* Daily Reminder Settings */}
+      <DailyReminderSettings
+        visible={dailyReminderOpen}
+        onClose={() => setDailyReminderOpen(false)}
+      />
 
       {/* Edit Sheet */}
       <EditScrapSheet
@@ -641,16 +661,11 @@ export function FeedScreen({ filter }: Props) {
               <Text style={styles.tagSheetClose}>완료</Text>
             </TouchableOpacity>
           </View>
-          {selectedTags.length > 0 && (
-            <TouchableOpacity
-              style={styles.tagSheetClearBtn}
-              onPress={() => { setSelectedTags([]); setTagSheetOpen(false) }}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.tagSheetClearText}>필터 초기화</Text>
-            </TouchableOpacity>
-          )}
-          <View style={styles.tagSheetGrid}>
+          <ScrollView
+            style={styles.tagSheetScroll}
+            contentContainerStyle={styles.tagSheetGrid}
+            showsVerticalScrollIndicator={false}
+          >
             {tagPool.map((tag) => {
               const active = selectedTags.includes(tag)
               return (
@@ -679,6 +694,26 @@ export function FeedScreen({ filter }: Props) {
               activeOpacity={0.7}
             >
               <Text style={styles.tagSheetAddText}>+</Text>
+            </TouchableOpacity>
+          </ScrollView>
+          <View style={styles.tagSheetFooter}>
+            <TouchableOpacity
+              style={[
+                styles.tagSheetClearBtn,
+                selectedTags.length === 0 && styles.tagSheetClearBtnDisabled,
+              ]}
+              onPress={() => setSelectedTags([])}
+              activeOpacity={0.7}
+              disabled={selectedTags.length === 0}
+            >
+              <Text
+                style={[
+                  styles.tagSheetClearText,
+                  selectedTags.length === 0 && styles.tagSheetClearTextDisabled,
+                ]}
+              >
+                필터 초기화
+              </Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -828,6 +863,7 @@ const styles = StyleSheet.create({
   // Action bar — text-only controls (no pill background)
   actionText: { fontSize: 13, fontWeight: '600', color: '#AAAAAA' },
   actionTextActive: { color: '#D97706' },
+  actionTextUnopened: { color: '#3B82F6' },
   actionTextDisabled: { color: '#D5D5D5' },
   actionDivider: { fontSize: 12, color: '#DDDDDD' },
   searchBtn: {
@@ -938,20 +974,30 @@ const styles = StyleSheet.create({
   },
   tagSheetTitle: { fontSize: 17, fontWeight: '700', color: '#111111' },
   tagSheetClose: { fontSize: 16, fontWeight: '500', color: '#555555' },
-  tagSheetClearBtn: {
-    marginHorizontal: 20,
-    marginBottom: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    backgroundColor: '#FEE2E2',
-    alignSelf: 'flex-start',
+  tagSheetScroll: { flex: 1 },
+  tagSheetFooter: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#EEEEEE',
+    backgroundColor: '#FAFAFA',
   },
-  tagSheetClearText: { fontSize: 13, fontWeight: '600', color: '#DC2626' },
+  tagSheetClearBtn: {
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tagSheetClearBtnDisabled: { backgroundColor: '#F1F1F1' },
+  tagSheetClearText: { fontSize: 15, fontWeight: '600', color: '#DC2626' },
+  tagSheetClearTextDisabled: { color: '#BDBDBD' },
   tagSheetGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: 20,
+    paddingBottom: 16,
     gap: 10,
   },
   tagSheetChip: {
