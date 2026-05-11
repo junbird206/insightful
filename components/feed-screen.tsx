@@ -371,11 +371,17 @@ export function FeedScreen({ filter }: Props) {
           </>
         ) : (
           <>
-            <TouchableOpacity onPress={() => setMenuOpen(true)} activeOpacity={0.7}>
+            <TouchableOpacity
+              onPress={() => setMenuOpen(true)}
+              activeOpacity={0.7}
+              style={styles.appLogoButton}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
               <Image
                 source={require('@/assets/images/logo-wordmark.png')}
                 style={styles.appLogo}
                 resizeMode="contain"
+                accessibilityLabel="insightful"
               />
             </TouchableOpacity>
             <View style={styles.titleRight}>
@@ -854,6 +860,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   appTitle: { fontSize: 28, fontWeight: '700', color: '#111111', letterSpacing: -0.5 },
+  appLogoButton: { minWidth: 81, height: 30, justifyContent: 'center' },
   appLogo: { height: 30, width: 30 * (883 / 327) },
   titleRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 

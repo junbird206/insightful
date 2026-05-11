@@ -1,5 +1,5 @@
 import { useAuth } from '@/lib/auth'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Animated,
@@ -26,9 +26,14 @@ export function SideMenu({ visible, scrapCount, onClose, onMyPage, onArchive, on
   const { user, signOut } = useAuth()
   const translateX = useRef(new Animated.Value(-MENU_WIDTH)).current
   const backdropOpacity = useRef(new Animated.Value(0)).current
+  // Tracks whether the menu has finished its close animation. Stays `false`
+  // while opening / open / mid-closing so the wrapper stays on top during the
+  // slide-out; flips to `true` only after the close animation completes.
+  const [fullyClosed, setFullyClosed] = useState(!visible)
 
   useEffect(() => {
     if (visible) {
+      setFullyClosed(false)
       Animated.parallel([
         Animated.timing(translateX, {
           toValue: 0,
@@ -53,7 +58,9 @@ export function SideMenu({ visible, scrapCount, onClose, onMyPage, onArchive, on
           duration: 200,
           useNativeDriver: true,
         }),
-      ]).start()
+      ]).start(({ finished }) => {
+        if (finished) setFullyClosed(true)
+      })
     }
   }, [visible])
 
@@ -75,7 +82,7 @@ export function SideMenu({ visible, scrapCount, onClose, onMyPage, onArchive, on
   const barColor = scrapCount > 40 ? '#DC2626' : scrapCount > 30 ? '#EA880C' : '#111111'
 
   return (
-    <View style={[styles.overlay, !visible && styles.overlayHidden]} pointerEvents={visible ? 'auto' : 'none'}>
+    <View style={[styles.overlay, fullyClosed && styles.overlayHidden]} pointerEvents={visible ? 'auto' : 'none'}>
       <TouchableWithoutFeedback onPress={onClose}>
         <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]} />
       </TouchableWithoutFeedback>
