@@ -105,6 +105,44 @@ export async function updateScrapStarred(id: string, starred: boolean): Promise<
   }
 }
 
+export async function markScrapOpened(id: string, openedAt: string): Promise<void> {
+  const supabase = getSupabaseBrowserClient()
+  const { error } = await supabase
+    .from('scraps')
+    .update({ opened_at: openedAt })
+    .eq('id', id)
+
+  if (error) {
+    throw error
+  }
+}
+
+export async function archiveScrap(id: string): Promise<string> {
+  const supabase = getSupabaseBrowserClient()
+  const archivedAt = new Date().toISOString()
+  const { error } = await supabase
+    .from('scraps')
+    .update({ archived_at: archivedAt })
+    .eq('id', id)
+
+  if (error) {
+    throw error
+  }
+  return archivedAt
+}
+
+export async function unarchiveScrap(id: string): Promise<void> {
+  const supabase = getSupabaseBrowserClient()
+  const { error } = await supabase
+    .from('scraps')
+    .update({ archived_at: null })
+    .eq('id', id)
+
+  if (error) {
+    throw error
+  }
+}
+
 type ScrapEditInput = {
   tags: string[]
   memo: string

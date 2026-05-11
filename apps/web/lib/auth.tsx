@@ -38,11 +38,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let mounted = true
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return
-      setSession(data.session)
-      setLoading(false)
-    })
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!mounted) return
+        setSession(data.session)
+        setLoading(false)
+      })
+      .catch(async (error) => {
+        if (!mounted) return
+        console.warn('[auth] getSession failed; clearing local session', error)
+        try {
+          await supabase.auth.signOut({ scope: 'local' })
+        } catch {
+          // best-effort: signOut may also fail if storage is unreachable
+        }
+        if (!mounted) return
+        setSession(null)
+        setLoading(false)
+      })
 
     const {
       data: { subscription },

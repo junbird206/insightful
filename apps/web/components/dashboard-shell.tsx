@@ -7,7 +7,15 @@ import { useRouter } from 'next/navigation'
 import type { Bucket, Scrap } from '@mobile-types/scrap'
 
 import { getNickname, useAuth } from '@/lib/auth'
-import { createQuickScrap, listScraps, updateScrapEdit, updateScrapStarred } from '@/lib/scraps'
+import {
+  archiveScrap,
+  createQuickScrap,
+  listScraps,
+  markScrapOpened,
+  unarchiveScrap,
+  updateScrapEdit,
+  updateScrapStarred,
+} from '@/lib/scraps'
 import { formatBucketLabel } from '@/lib/format'
 import {
   type RemindPresetConfig,
@@ -29,17 +37,12 @@ function getErrorMessage(error: unknown): string {
   return '알 수 없는 오류가 발생했습니다.'
 }
 
+const MIN_QUERY_LENGTH = 2
+
 function matchesQuery(scrap: Scrap, query: string): boolean {
-  if (!query) return true
+  if (query.length < MIN_QUERY_LENGTH) return true
 
-  const fields = [
-    scrap.rawTitle,
-    scrap.memo,
-    scrap.suggestedMemo,
-    scrap.siteName,
-    scrap.originalUrl,
-  ]
-
+  const fields = [scrap.rawTitle, scrap.memo]
   return fields.some((field) => field?.toLowerCase().includes(query))
 }
 
@@ -93,8 +96,11 @@ export function DashboardShell() {
   const [bucketFilter, setBucketFilter] = useState<BucketFilter>('all')
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [starredOnly, setStarredOnly] = useState(false)
+  const [unopenedOnly, setUnopenedOnly] = useState(false)
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const selectionMode = selectedIds.size > 0
 
   const [editOpen, setEditOpen] = useState(false)
   const [editScrapId, setEditScrapId] = useState<string | null>(null)
@@ -103,6 +109,9 @@ export function DashboardShell() {
   const [editRemindAt, setEditRemindAt] = useState<string | null>(null)
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState('')
+
+  const [undoState, setUndoState] = useState<{ scraps: Scrap[] } | null>(null)
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [newUrl, setNewUrl] = useState('')
   const [newMemo, setNewMemo] = useState('')
@@ -187,6 +196,10 @@ export function DashboardShell() {
 
   if (starredOnly) {
     filteredScraps = filteredScraps.filter((scrap) => scrap.starred)
+  }
+
+  if (unopenedOnly) {
+    filteredScraps = filteredScraps.filter((scrap) => scrap.openedAt === null)
   }
 
   if (selectedTags.length > 0) {
@@ -376,6 +389,100 @@ export function DashboardShell() {
     }
   }
 
+  function clearUndoTimer() {
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current)
+      undoTimerRef.current = null
+    }
+  }
+
+  useEffect(() => () => clearUndoTimer(), [])
+
+  function startUndoTimer() {
+    clearUndoTimer()
+    undoTimerRef.current = setTimeout(() => {
+      setUndoState(null)
+      undoTimerRef.current = null
+    }, 5000)
+  }
+
+  async function handleDeleteScrap() {
+    if (!editingScrap || editSaving) return
+    const target = editingScrap
+    closeEdit()
+    setScraps((current) => current.filter((scrap) => scrap.id !== target.id))
+    if (selectedId === target.id) setSelectedId(null)
+
+    setUndoState({ scraps: [target] })
+    startUndoTimer()
+
+    try {
+      await archiveScrap(target.id)
+    } catch (error) {
+      setScraps((current) => [target, ...current])
+      clearUndoTimer()
+      setUndoState(null)
+      setWorkspaceError(getErrorMessage(error))
+    }
+  }
+
+  function toggleCardSelection(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function exitSelectionMode() {
+    setSelectedIds(new Set())
+  }
+
+  async function handleBulkDelete() {
+    if (selectedIds.size === 0) return
+    const targets = scraps.filter((scrap) => selectedIds.has(scrap.id))
+    if (targets.length === 0) return
+
+    const targetIds = new Set(targets.map((t) => t.id))
+    setScraps((current) => current.filter((scrap) => !targetIds.has(scrap.id)))
+    if (selectedId && targetIds.has(selectedId)) setSelectedId(null)
+    exitSelectionMode()
+
+    setUndoState({ scraps: targets })
+    startUndoTimer()
+
+    try {
+      await Promise.all(targets.map((t) => archiveScrap(t.id)))
+    } catch (error) {
+      setScraps((current) =>
+        [...current, ...targets].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      )
+      clearUndoTimer()
+      setUndoState(null)
+      setWorkspaceError(getErrorMessage(error))
+    }
+  }
+
+  async function handleUndoDelete() {
+    if (!undoState) return
+    const targets = undoState.scraps
+    clearUndoTimer()
+    setUndoState(null)
+    setScraps((current) =>
+      [...current, ...targets.map((t) => ({ ...t, archivedAt: null }))].sort((a, b) =>
+        b.createdAt.localeCompare(a.createdAt),
+      ),
+    )
+    try {
+      await Promise.all(targets.map((t) => unarchiveScrap(t.id)))
+    } catch (error) {
+      const targetIds = new Set(targets.map((t) => t.id))
+      setScraps((current) => current.filter((scrap) => !targetIds.has(scrap.id)))
+      setWorkspaceError(getErrorMessage(error))
+    }
+  }
+
   async function handleSignOut() {
     await signOut()
     router.replace('/login')
@@ -413,6 +520,25 @@ export function DashboardShell() {
     }
     setNicknameOpen(false)
     setNicknamePromptDismissed(true)
+  }
+
+  async function handleOpenScrap(scrap: Scrap) {
+    window.open(scrap.originalUrl, '_blank', 'noopener,noreferrer')
+
+    if (scrap.openedAt) return
+
+    const openedAt = new Date().toISOString()
+    setScraps((current) =>
+      current.map((item) => (item.id === scrap.id ? { ...item, openedAt } : item)),
+    )
+    try {
+      await markScrapOpened(scrap.id, openedAt)
+    } catch (error) {
+      setScraps((current) =>
+        current.map((item) => (item.id === scrap.id ? { ...item, openedAt: scrap.openedAt } : item)),
+      )
+      setWorkspaceError(getErrorMessage(error))
+    }
   }
 
   async function handleToggleStar(scrap: Scrap) {
@@ -473,6 +599,7 @@ export function DashboardShell() {
   function handleBackgroundClick(event: ReactMouseEvent<HTMLElement>) {
     if (event.target === event.currentTarget) {
       setSelectedId(null)
+      if (selectionMode) exitSelectionMode()
     }
   }
 
@@ -803,20 +930,61 @@ export function DashboardShell() {
 
         <section className="list-panel">
           <div className="list-toolbar">
-            <div>
-              <p className="eyebrow">Library</p>
-              <p className="list-count">카드 {filteredScraps.length}개</p>
-            </div>
-            <button
-              aria-label={starredOnly ? '중요 표시 필터 해제' : '중요 표시만 보기'}
-              aria-pressed={starredOnly}
-              className={`star-filter-button ${starredOnly ? 'star-filter-button-active' : ''}`}
-              onClick={() => setStarredOnly((current) => !current)}
-              type="button"
-            >
-              <span className="star-filter-glyph">{starredOnly ? '★' : '☆'}</span>
-              <span className="star-filter-label">중요</span>
-            </button>
+            {selectionMode ? (
+              <>
+                <div>
+                  <p className="eyebrow">Library</p>
+                  <p className="list-count">{selectedIds.size}개 선택됨</p>
+                </div>
+                <div className="list-toolbar-filters">
+                  <button
+                    className="selection-toolbar-button"
+                    onClick={exitSelectionMode}
+                    type="button"
+                  >
+                    선택 해제
+                  </button>
+                  <button
+                    className="selection-toolbar-button selection-toolbar-button-danger"
+                    onClick={handleBulkDelete}
+                    type="button"
+                  >
+                    삭제
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <p className="eyebrow">Library</p>
+                  <p className="list-count">카드 {filteredScraps.length}개</p>
+                </div>
+                <div className="list-toolbar-filters">
+                  <button
+                    aria-label={unopenedOnly ? '미개봉 필터 해제' : '미개봉만 보기'}
+                    aria-pressed={unopenedOnly}
+                    className={`star-filter-button unopened-filter-button ${unopenedOnly ? 'unopened-filter-button-active' : ''}`}
+                    onClick={() => setUnopenedOnly((current) => !current)}
+                    type="button"
+                  >
+                    <span className="star-filter-glyph" aria-hidden="true">
+                      {unopenedOnly ? '●' : '○'}
+                    </span>
+                    <span className="star-filter-label">미개봉</span>
+                  </button>
+                  <button
+                    aria-label={starredOnly ? '중요 표시 필터 해제' : '중요 표시만 보기'}
+                    aria-pressed={starredOnly}
+                    className={`star-filter-button ${starredOnly ? 'star-filter-button-active' : ''}`}
+                    onClick={() => setStarredOnly((current) => !current)}
+                    type="button"
+                  >
+                    <span className="star-filter-glyph">{starredOnly ? '★' : '☆'}</span>
+                    <span className="star-filter-label">중요</span>
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
           {workspaceError ? <p className="panel-error">{workspaceError}</p> : null}
@@ -830,19 +998,47 @@ export function DashboardShell() {
             <div className="scrap-list">
               {filteredScraps.map((scrap) => {
                 const summary = scrap.memo || scrap.suggestedMemo || '아직 메모가 없습니다.'
-                const isSelected = scrap.id === selectedScrap?.id
+                const isFocused = scrap.id === selectedScrap?.id && !selectionMode
+                const isChecked = selectedIds.has(scrap.id)
+                const isRead = scrap.openedAt != null
+                const cardClasses = [
+                  'scrap-card',
+                  isRead ? 'scrap-card-read' : '',
+                  isFocused ? 'scrap-card-selected' : '',
+                  isChecked ? 'scrap-card-checked' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')
 
                 return (
-                  <article
-                    className={`scrap-card ${isSelected ? 'scrap-card-selected' : ''}`}
-                    key={scrap.id}
-                  >
+                  <article className={cardClasses} key={scrap.id}>
+                    <button
+                      aria-label={isChecked ? '선택 해제' : '선택'}
+                      aria-pressed={isChecked}
+                      className={`card-check-button ${isChecked ? 'card-check-button-active' : ''}`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        toggleCardSelection(scrap.id)
+                      }}
+                      type="button"
+                    >
+                      <span className="card-check-glyph" aria-hidden="true">
+                        {isChecked ? '✓' : ''}
+                      </span>
+                    </button>
+
                     <button
                       className="card-select-button"
-                      onClick={() => setSelectedId(scrap.id)}
-                      onDoubleClick={() =>
-                        window.open(scrap.originalUrl, '_blank', 'noopener,noreferrer')
-                      }
+                      onClick={() => {
+                        if (selectionMode) {
+                          toggleCardSelection(scrap.id)
+                        } else {
+                          setSelectedId(scrap.id)
+                        }
+                      }}
+                      onDoubleClick={() => {
+                        if (!selectionMode) handleOpenScrap(scrap)
+                      }}
                       type="button"
                     >
                       <div className="card-topline">
@@ -861,18 +1057,20 @@ export function DashboardShell() {
                       <p className="card-memo">{summary}</p>
                     </button>
 
-                    <button
-                      aria-label={scrap.starred ? '중요 표시 해제' : '중요 표시'}
-                      aria-pressed={scrap.starred}
-                      className={`star-button ${scrap.starred ? 'star-button-active' : ''}`}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        handleToggleStar(scrap)
-                      }}
-                      type="button"
-                    >
-                      {scrap.starred ? '★' : '☆'}
-                    </button>
+                    {!selectionMode ? (
+                      <button
+                        aria-label={scrap.starred ? '중요 표시 해제' : '중요 표시'}
+                        aria-pressed={scrap.starred}
+                        className={`star-button ${scrap.starred ? 'star-button-active' : ''}`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          handleToggleStar(scrap)
+                        }}
+                        type="button"
+                      >
+                        {scrap.starred ? '★' : '☆'}
+                      </button>
+                    ) : null}
 
                     <div className="card-footer">
                       <div className="card-footer-left">
@@ -887,7 +1085,7 @@ export function DashboardShell() {
                           </div>
                         ) : null}
                       </div>
-                      {isSelected ? (
+                      {isFocused ? (
                         <button
                           className="card-link-button card-link-button-edit"
                           onClick={() => openEdit(scrap)}
@@ -1071,25 +1269,48 @@ export function DashboardShell() {
 
             {editError ? <p className="panel-error">{editError}</p> : null}
 
-            <div className="modal-actions">
+            <div className="modal-actions modal-actions-split">
               <button
-                className="ghost-button"
+                className="danger-button"
                 disabled={editSaving}
-                onClick={closeEdit}
+                onClick={handleDeleteScrap}
                 type="button"
               >
-                취소
+                삭제
               </button>
-              <button
-                className="primary-button"
-                disabled={editSaving}
-                onClick={handleEditSave}
-                type="button"
-              >
-                {editSaving ? '저장 중...' : '저장'}
-              </button>
+              <div className="modal-actions-trailing">
+                <button
+                  className="ghost-button"
+                  disabled={editSaving}
+                  onClick={closeEdit}
+                  type="button"
+                >
+                  취소
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={editSaving}
+                  onClick={handleEditSave}
+                  type="button"
+                >
+                  {editSaving ? '저장 중...' : '저장'}
+                </button>
+              </div>
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {undoState ? (
+        <div className="undo-toast" role="status" aria-live="polite">
+          <span className="undo-toast-text">
+            {undoState.scraps.length > 1
+              ? `${undoState.scraps.length}개 삭제됨`
+              : '삭제됨'}
+          </span>
+          <button className="undo-toast-action" onClick={handleUndoDelete} type="button">
+            실행취소
+          </button>
         </div>
       ) : null}
 
