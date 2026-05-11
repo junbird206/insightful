@@ -1,4 +1,12 @@
-# Welcome to your Expo app 👋
+# insightful
+
+An Expo mobile app + Next.js companion dashboard sharing a Supabase backend.
+
+- **Mobile (Expo)**: source at the repo root (`app/`, `components/`, `lib/`)
+- **Web dashboard (Next.js 15)**: source at `apps/web/`
+- **Live demo**: _<!-- DEMO_URL --> https://_TBD_.vercel.app_ (filled in after first Vercel deploy)
+
+---
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
