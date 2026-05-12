@@ -5,13 +5,18 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 
 import { getSupabaseBrowserClient } from '@/lib/supabase-browser'
 
+type SignUpResult = {
+  error: string | null
+  needsEmailConfirmation: boolean
+}
+
 type AuthContextValue = {
   session: Session | null
   user: User | null
   loading: boolean
   signIn: (email: string, password: string) => Promise<string | null>
+  signUp: (email: string, password: string, nickname: string) => Promise<SignUpResult>
   signOut: () => Promise<void>
-  signInWithGoogle: () => Promise<string | null>
   updateNickname: (nickname: string) => Promise<string | null>
 }
 
@@ -84,24 +89,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return error?.message ?? null
   }
 
-  async function signOut(): Promise<void> {
-    if (!supabase) return
-    await supabase.auth.signOut()
-  }
-
-  async function signInWithGoogle(): Promise<string | null> {
+  async function signUp(
+    email: string,
+    password: string,
+    nickname: string,
+  ): Promise<SignUpResult> {
     if (!supabase) {
-      return 'Supabase client is not ready yet.'
+      return { error: 'Supabase client is not ready yet.', needsEmailConfirmation: false }
     }
 
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
+    const trimmedNickname = nickname.trim()
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
       options: {
-        redirectTo: window.location.origin,
+        data: { nickname: trimmedNickname },
+        emailRedirectTo:
+          typeof window !== 'undefined' ? window.location.origin : undefined,
       },
     })
 
-    return error?.message ?? null
+    if (error) {
+      return { error: error.message, needsEmailConfirmation: false }
+    }
+
+    // If email confirmation is enabled in Supabase, signUp returns a user but
+    // no session — let the caller surface a "check your inbox" message.
+    return {
+      error: null,
+      needsEmailConfirmation: !data.session,
+    }
+  }
+
+  async function signOut(): Promise<void> {
+    if (!supabase) return
+    await supabase.auth.signOut()
   }
 
   async function updateNickname(nickname: string): Promise<string | null> {
@@ -129,7 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         session,
         signIn,
-        signInWithGoogle,
+        signUp,
         signOut,
         updateNickname,
         user: session?.user ?? null,

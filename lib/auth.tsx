@@ -1,5 +1,3 @@
-import { makeRedirectUri } from 'expo-auth-session'
-import * as WebBrowser from 'expo-web-browser'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 
 import { supabase } from './supabase'
@@ -13,9 +11,8 @@ type AuthContextType = {
   nickname: string | null
   loading: boolean
   signIn: (email: string, password: string) => Promise<string | null>
-  signUp: (email: string, password: string) => Promise<string | null>
+  signUp: (email: string, password: string, nickname: string) => Promise<string | null>
   signOut: () => Promise<void>
-  signInWithGoogle: () => Promise<string | null>
   updatePassword: (newPassword: string) => Promise<string | null>
   updateNickname: (nickname: string) => Promise<string | null>
   deleteAccount: () => Promise<string | null>
@@ -43,13 +40,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // 앱 시작 시 기존 세션 복원
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s)
       setLoading(false)
     })
 
-    // 세션 변경 구독
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, s) => {
@@ -66,8 +61,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return error?.message ?? null
   }
 
-  async function signUp(email: string, password: string): Promise<string | null> {
-    const { error } = await supabase.auth.signUp({ email, password })
+  // Nickname is stored at auth.users.user_metadata.nickname at signup time
+  // so the very first session already carries it (no extra round-trip).
+  async function signUp(
+    email: string,
+    password: string,
+    nickname: string,
+  ): Promise<string | null> {
+    const trimmedNickname = nickname.trim()
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { nickname: trimmedNickname } },
+    })
     return error?.message ?? null
   }
 
@@ -83,8 +89,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   // ─── Nickname update ─────────────────────────────────────────────────────
-  // Stored at auth.users.user_metadata.nickname — same location used by the
-  // web client so changes round-trip automatically.
 
   async function updateNickname(nickname: string): Promise<string | null> {
     const trimmed = nickname.trim()
@@ -110,46 +114,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return null
   }
 
-  // ─── Google OAuth ─────────────────────────────────────────────────────────
-  // Supabase Dashboard에서 Google provider 활성화 필요
-  // Authentication > Providers > Google > Enable
-  // Google Cloud Console에서 OAuth 2.0 Client ID 발급 필요
-
-  async function signInWithGoogle(): Promise<string | null> {
-    try {
-      const redirectTo = makeRedirectUri()
-
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo, skipBrowserRedirect: true },
-      })
-
-      if (error || !data.url) return error?.message ?? 'OAuth URL 생성 실패'
-
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo)
-
-      if (result.type === 'success') {
-        // 콜백 URL에서 토큰 추출
-        const url = result.url
-        const fragmentParams = new URLSearchParams(url.split('#')[1] ?? '')
-        const accessToken = fragmentParams.get('access_token')
-        const refreshToken = fragmentParams.get('refresh_token')
-
-        if (accessToken && refreshToken) {
-          const { error: sessionError } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          })
-          return sessionError?.message ?? null
-        }
-      }
-
-      return null // 사용자가 취소한 경우
-    } catch (err) {
-      return err instanceof Error ? err.message : 'Google 로그인 실패'
-    }
-  }
-
   return (
     <AuthContext.Provider
       value={{
@@ -160,7 +124,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signIn,
         signUp,
         signOut,
-        signInWithGoogle,
         updatePassword,
         updateNickname,
         deleteAccount,

@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import type { FormEvent } from 'react'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -9,13 +10,12 @@ import { useAuth } from '@/lib/auth'
 
 export default function LoginPage() {
   const router = useRouter()
-  const { session, loading, signIn, signInWithGoogle } = useAuth()
+  const { session, loading, signIn } = useAuth()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [googleSubmitting, setGoogleSubmitting] = useState(false)
 
   useEffect(() => {
     if (!loading && session) {
@@ -36,18 +36,6 @@ export default function LoginPage() {
     const message = await signIn(email.trim(), password)
 
     setSubmitting(false)
-    if (message) {
-      setError(message)
-    }
-  }
-
-  async function handleGoogle() {
-    setGoogleSubmitting(true)
-    setError('')
-
-    const message = await signInWithGoogle()
-
-    setGoogleSubmitting(false)
     if (message) {
       setError(message)
     }
@@ -233,28 +221,13 @@ export default function LoginPage() {
 
           {error ? <p className="form-error">{error}</p> : null}
 
-          <button className="primary-button" disabled={submitting || googleSubmitting} type="submit">
+          <button className="primary-button" disabled={submitting} type="submit">
             {submitting ? '로그인 중...' : '이메일로 로그인'}
           </button>
         </form>
 
-        <div className="divider">
-          <span />
-          <p>또는</p>
-          <span />
-        </div>
-
-        <button
-          className="secondary-button"
-          disabled={submitting || googleSubmitting}
-          onClick={handleGoogle}
-          type="button"
-        >
-          {googleSubmitting ? 'Google 연결 중...' : 'Google로 계속하기'}
-        </button>
-
         <p className="helper-copy">
-          처음이신가요? 모바일 앱에서 가입한 계정으로 그대로 로그인할 수 있습니다.
+          처음이신가요? <Link className="helper-link" href="/signup">회원가입하기</Link>
         </p>
       </section>
     </main>
