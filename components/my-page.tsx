@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { useAuth } from '@/lib/auth'
+import { describeDataError } from '@/lib/errors'
 import {
   type RemindPresetConfig,
   getRemindPresets,
@@ -50,21 +51,33 @@ export function MyPage({ visible, scrapCount, onClose }: Props) {
   }, [visible, nickname])
 
   async function persist(updated: RemindPresetConfig[]) {
+    const previous = presets
     setPresets(updated)
-    await saveRemindPresets(updated)
+    try {
+      await saveRemindPresets(updated)
+    } catch (err) {
+      // 저장 실패 시 낙관적 업데이트 롤백 + 사용자에게 한국어로 안내
+      setPresets(previous)
+      const msg = err instanceof Error ? err.message : null
+      const friendly = describeDataError(msg, '프리셋을 저장하지 못했어요. 잠시 후 다시 시도해주세요.')
+      // 개발 빌드에서는 raw 메시지도 같이 보여줘서 원인 파악을 빠르게.
+      // 프로덕션 빌드에서는 친근한 메시지만 노출.
+      const body = __DEV__ && msg ? `${friendly}\n\n[debug] ${msg}` : friendly
+      Alert.alert('저장 실패', body)
+    }
   }
 
   function updatePreset(id: string, changes: Partial<RemindPresetConfig>) {
-    persist(presets.map((p) => (p.id === id ? { ...p, ...changes } : p)))
+    void persist(presets.map((p) => (p.id === id ? { ...p, ...changes } : p)))
   }
 
   function deletePreset(id: string) {
-    persist(presets.filter((p) => p.id !== id))
+    void persist(presets.filter((p) => p.id !== id))
   }
 
   function addPreset() {
     if (presets.length >= MAX_PRESETS) return
-    persist([
+    void persist([
       ...presets,
       { id: Date.now().toString(), label: '새 프리셋', dayOffset: 0, hour: 12, minute: 0 },
     ])

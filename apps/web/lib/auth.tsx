@@ -3,6 +3,7 @@
 import type { Session, SupabaseClient, User } from '@supabase/supabase-js'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 
+import { translateAuthError } from '@/lib/errors'
 import { getSupabaseBrowserClient } from '@/lib/supabase-browser'
 
 type SignUpResult = {
@@ -78,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signIn(email: string, password: string): Promise<string | null> {
     if (!supabase) {
-      return 'Supabase client is not ready yet.'
+      return '잠시 후 다시 시도해주세요.'
     }
 
     const { error } = await supabase.auth.signInWithPassword({
@@ -86,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
     })
 
-    return error?.message ?? null
+    return error ? translateAuthError(error.message) : null
   }
 
   async function signUp(
@@ -95,7 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     nickname: string,
   ): Promise<SignUpResult> {
     if (!supabase) {
-      return { error: 'Supabase client is not ready yet.', needsEmailConfirmation: false }
+      return { error: 'Supabase 클라이언트가 아직 준비되지 않았습니다.', needsEmailConfirmation: false }
     }
 
     const trimmedNickname = nickname.trim()
@@ -110,7 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
 
     if (error) {
-      return { error: error.message, needsEmailConfirmation: false }
+      return { error: translateAuthError(error.message), needsEmailConfirmation: false }
     }
 
     // If email confirmation is enabled in Supabase, signUp returns a user but
@@ -128,7 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function updateNickname(nickname: string): Promise<string | null> {
     if (!supabase) {
-      return 'Supabase client is not ready yet.'
+      return '잠시 후 다시 시도해주세요.'
     }
     const trimmed = nickname.trim()
     if (!trimmed) {
@@ -138,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase.auth.updateUser({
       data: { nickname: trimmed },
     })
-    if (error) return error.message
+    if (error) return translateAuthError(error.message)
     if (data.user) {
       setSession((current) => (current ? { ...current, user: data.user! } : current))
     }

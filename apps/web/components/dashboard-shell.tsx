@@ -23,6 +23,7 @@ import {
   listRemindPresets,
 } from '@/lib/remind-presets'
 import { addTagToPool, listTagPool } from '@/lib/tag-pools'
+import { describeDataError } from '@/lib/errors'
 
 type BucketFilter = 'all' | Bucket
 
@@ -31,10 +32,11 @@ const BUCKET_OPTIONS: BucketFilter[] = ['all', 'read', 'do']
 const MAX_CARDS = 50
 
 function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
-  }
-  return '알 수 없는 오류가 발생했습니다.'
+  // Supabase 에러는 영어 메시지가 그대로 노출되면 사용자에게 도움이 안 되므로
+  // 한국어 fallback으로 한 번 더 감싸준다. 매칭 안 된 영문 메시지도 일반화된
+  // 한국어 안내로 떨어진다.
+  const raw = error instanceof Error ? error.message : null
+  return describeDataError(raw, '문제가 발생했어요. 잠시 후 다시 시도해주세요.')
 }
 
 const MIN_QUERY_LENGTH = 2

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 
+import { translateAuthError } from './errors'
 import { supabase } from './supabase'
 import type { Session, User } from '@supabase/supabase-js'
 
@@ -58,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signIn(email: string, password: string): Promise<string | null> {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    return error?.message ?? null
+    return error ? translateAuthError(error.message) : null
   }
 
   // Nickname is stored at auth.users.user_metadata.nickname at signup time
@@ -74,7 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
       options: { data: { nickname: trimmedNickname } },
     })
-    return error?.message ?? null
+    return error ? translateAuthError(error.message) : null
   }
 
   async function signOut() {
@@ -85,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function updatePassword(newPassword: string): Promise<string | null> {
     const { error } = await supabase.auth.updateUser({ password: newPassword })
-    return error?.message ?? null
+    return error ? translateAuthError(error.message) : null
   }
 
   // ─── Nickname update ─────────────────────────────────────────────────────
@@ -98,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase.auth.updateUser({
       data: { nickname: trimmed },
     })
-    if (error) return error.message
+    if (error) return translateAuthError(error.message)
     if (data.user) {
       setSession((current) => (current ? { ...current, user: data.user! } : current))
     }
@@ -109,7 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function deleteAccount(): Promise<string | null> {
     const { error } = await supabase.rpc('delete_own_account')
-    if (error) return error.message
+    if (error) return translateAuthError(error.message)
     await supabase.auth.signOut()
     return null
   }
