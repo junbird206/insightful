@@ -10,7 +10,9 @@
 ## 데모
 
 - **웹 대시보드**: https://insightful-ten.vercel.app
-- **iOS TestFlight**: https://testflight.apple.com/join/J68Gn3hA (Beta Review 통과 후 활성화, iOS 16+, TestFlight 앱 필요)
+- **iOS TestFlight 공개 링크**: https://testflight.apple.com/join/J68Gn3hA
+  - iOS 16+ / TestFlight 앱 필요
+  - 현재 Apple TestFlight 심사·처리 중일 수 있으므로, 접속이 되지 않을 경우 일정 시간 후 다시 확인 부탁드립니다.
 - **심사용 데모 계정**: `user@example.com` / `12345678`
 
 ---
