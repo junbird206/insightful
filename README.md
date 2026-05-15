@@ -9,7 +9,7 @@
 
 ## 데모
 
-- **웹 대시보드**: `_TODO: Vercel URL_`
+- **웹 대시보드**: https://insightful-ten.vercel.app
 - **iOS TestFlight**: `_TODO: TestFlight invite link_`
 - **심사용 데모 계정**: `user@example.com` / `12345678`
 
