@@ -10,7 +10,7 @@
 ## 데모
 
 - **웹 대시보드**: https://insightful-ten.vercel.app
-- **iOS TestFlight**: `_TODO: TestFlight invite link_`
+- **iOS TestFlight**: https://testflight.apple.com/join/J68Gn3hA (Beta Review 통과 후 활성화, iOS 16+, TestFlight 앱 필요)
 - **심사용 데모 계정**: `user@example.com` / `12345678`
 
 ---
